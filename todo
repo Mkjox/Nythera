@@ -1,0 +1,52 @@
+Prompt (for a designer or AI):
+Design a React Native music player app UI focused on functionality and user flows (no colors or visual themes). Describe pages, components, and the functions each page must provide. Be explicit about interactions, persistent components, navigation, and edge-case behaviors. Use component and screen names where helpful.
+
+[✅ DONE] Splash / Onboarding: Lightweight startup flow; functions: app initialization, permission requests (storage/audio), handle first-run setup, optional brief feature highlights, skip/continue actions, deep-link handling.
+
+[✅ DONE] Main Navigation: Persistent navigation pattern (e.g., bottom tabs + stack); functions: navigate to Home, Search, Library, Queue, and NowPlaying; deep-link routing; handle back/navigation stack correctly on Android/iOS.
+
+[✅ DONE] Home / Dashboard: Aggregated landing screen; functions: show recent tracks, suggested playlists, recently played artists/albums, quick actions (play/shuffle/add to queue), cards that navigate to Playlist screens, support for dynamic sections and pull-to-refresh.
+
+[✅ DONE] Library: Central library listing; functions: tabs/segments for Songs, Playlists, Downloads; sort and filter controls, multi-select for batch actions (add to playlist, delete, download), quick jump by letter, context menus per item.
+
+[✅ DONE] Search: Global search with suggestions; functions: real-time search-as-you-type across tracks/playlists, recent searches, result grouping, result actions (play, queue, go to album/artist), fuzzy matching and filters (local/online).
+
+[✅ DONE] Playlist Screen: Detail pages; functions: list tracks, play album/playlist, shuffle, add/remove tracks, reorder tracks via drag-and-drop, show track duration and metadata, show artwork and credits, navigate to artist/album/track detail.
+
+[✅ DONE] Now Playing (Full Screen): Primary playback screen; functions: large artwork (for now just an icon), track title, play/pause, next/previous, elapsed/remaining time, queue button, favorite/like, add to playlist, repeat/shuffle toggle, playback speed, lock-screen metadata updates.
+
+[✅ DONE] Mini Player (Persistent): Small persistent control visible across most screens; functions: show current track, play/pause, tap to open NowPlaying, swipe/expand behavior, skip forward, show progress indicator, hide/show rules (e.g., when no playback).
+
+[✅ DONE] Queue Manager: Manage upcoming tracks; functions: view reordering, remove items, save queue as playlist, clear queue, show origin (which playlist added from), jump to track in queue to play immediately, persist across sessions.
+
+[✅ DONE] Playback Controls & State: Shared functions used by screens: play/pause, next/previous, seek, set playback speed, toggle shuffle/repeat, crossfade/gapless toggle, volume control (system integration), mute, resume on open, persist playback state, prefetch next track, manage audio focus/interruptions, handle headphones/bt controls and media buttons.
+
+[✅ DONE] Downloads / Offline: Manage offline content; functions: queue downloads, show download progress/status, pause/resume/cancel, storage space metrics, auto-delete old downloads, offline search and play, offline-only mode toggle.
+
+[✅ DONE] Equalizer / Audio Effects: Audio tools screen; functions: enable/disable EQ, presets, custom EQ bands, bass boost, virtualizer, save/load presets, reset defaults, apply per-output or global.
+
+[✅ DONE] Device / Casting / Output Selection: Choose audio output; functions: detect/list Bluetooth devices and cast targets, show connection state, select output, show metadata/control when casting, fallback when device disconnects.
+
+[✅ DONE] Notifications & Background Playback: System integration; functions: show persistent media notification with play/pause/skip/close, update artwork and metadata, handle background playback, lock-screen controls, resume from notification, respond to remote commands.
+
+[✅ DONE] Settings: Central settings page; functions: playback preferences (crossfade, gapless, normalization), download settings (Wi‑Fi only, storage location), library scanning, autoplay behavior, sleep timer, notifications preferences, data usage, privacy controls.
+
+[✅ DONE] Sleep Timer: Timer control; functions: set timer durations, actions on timer end (stop playback/pause/finish track), show remaining time in UI and notification, auto-disable device features if required.
+
+[✅ DONE] History / Recently Played: Playback history; functions: list recent tracks with timestamps, clear history, re-add to queue/playlist.
+
+[✅ DONE] Error Handling & Edge Cases: App-level behaviors; functions: graceful offline fallbacks, retry and backoff for network fetches, user-visible error messages with actions, stalled-stream recovery, low-storage warnings, permission denial flows, corrupted-file handling.
+
+[✅ DONE] Performance & Persistence: Cross-cutting functions; functions: store playback state and queue persistently, prefetch and buffer strategy, lazy load long lists, memory usage constraints on low-end devices, periodic cleanup of cache.
+
+[✅ DONE] Developer / Debug Tools (optional): Hidden debug screen; functions: show logs, mock playback, simulate network conditions, clear caches, toggle verbose error reporting.
+
+[✅ DONE] Analytics & Telemetry (configurable): Optional metrics; functions: track feature usage events, playback errors, crash logs, with opt-in/out controls and privacy-safe defaults.
+
+Notes on interactions and expectations (single-line bullets):
+
+Navigation Model: Bottom tabs + stack for deep views; swiping gestures for some transitions.
+Persistent State: Queue, playback position, and settings survive app restarts.
+Batch Actions: Multi-select everywhere for playlists/library edits.
+Gestures: Swipe to queue/like in lists; long-press for context menus.
+Testing Hooks: Provide deterministic playback mock mode for UI tests.
