@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createBottomTabNavigator, BottomTabBar, BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { colors, typography, spacing, radius } from '../theme';
 import HomeScreen from '../screens/HomeScreen';
 import SearchScreen from '../screens/SearchScreen';
@@ -40,6 +41,12 @@ export default function TabNavigator({ onMiniPlayerPress }: { onMiniPlayerPress:
           tabBarStyle: styles.tabBar,
           tabBarShowLabel: false,
         }}
+        tabBar={(props: BottomTabBarProps) => (
+          <View>
+            <MiniPlayer />
+            <BottomTabBar {...props} />
+          </View>
+        )}
       >
         <Tab.Screen
           name="Home"
@@ -70,7 +77,6 @@ export default function TabNavigator({ onMiniPlayerPress }: { onMiniPlayerPress:
           }}
         />
       </Tab.Navigator>
-      <MiniPlayer onPress={onMiniPlayerPress} />
     </View>
   );
 }
@@ -90,13 +96,14 @@ const styles = StyleSheet.create({
   tabItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
+    gap: 2,
     position: 'relative',
   },
   tabLabel: {
-    fontSize: typography.xs,
+    fontSize: 10,
     color: colors.textMuted,
     fontWeight: typography.medium,
+    lineHeight: 12,
   },
   tabLabelActive: {
     color: colors.accentLight,

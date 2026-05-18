@@ -1,17 +1,59 @@
-import React, { useState } from 'react';
+import React, { useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { colors, spacing, radius, typography } from '../theme';
-import { TRACKS, PLAYLISTS, Playlist } from '../data/mockData';
+import { useLibrary, usePlayer } from '../store/MusicProvider';
 import TrackItem from '../components/TrackItem';
 
 export default function PlaylistScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const playlist: Playlist = route.params?.playlist ?? PLAYLISTS[0];
-  const [isFollowing, setIsFollowing] = useState(false);
+  const { playlists, getPlaylistTracks, dispatch } = useLibrary();
+  const { playTrack } = usePlayer();
+
+  const playlistId = route.params?.playlistId;
+  const playlist = playlists.find(p => p.id === playlistId);
+  const tracks = playlist ? getPlaylistTracks(playlistId) : [];
+
+  const totalDuration = tracks.reduce((sum, t) => sum + t.durationSec, 0);
+  const totalMins = Math.floor(totalDuration / 60);
+  const totalHrs = Math.floor(totalMins / 60);
+  const remainMins = totalMins % 60;
+  const durationLabel = totalHrs > 0 ? `${totalHrs} hr ${remainMins} min` : `${totalMins} min`;
+
+  const handlePlay = useCallback(() => {
+    if (tracks.length > 0) {
+      playTrack(tracks[0], tracks, 0);
+    }
+  }, [tracks, playTrack]);
+
+  const handleShuffle = useCallback(() => {
+    if (tracks.length > 0) {
+      const shuffled = [...tracks].sort(() => Math.random() - 0.5);
+      playTrack(shuffled[0], shuffled, 0);
+    }
+  }, [tracks, playTrack]);
+
+  const handlePlayTrack = useCallback((index: number) => {
+    playTrack(tracks[index], tracks, index);
+  }, [tracks, playTrack]);
+
+  if (!playlist) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.headerBar}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+        </View>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: colors.textMuted, fontSize: typography.md }}>Playlist not found</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -30,34 +72,32 @@ export default function PlaylistScreen() {
         <View style={[styles.hero, { backgroundColor: playlist.colorA }]}>
           <View style={[styles.heroOverlay, { backgroundColor: playlist.colorB + '66' }]} />
           <View style={styles.heroArt}>
-            <Ionicons name="musical-notes" size={72} color="rgba(255,255,255,0.35)" />
+            <Ionicons name="folder-open" size={72} color="rgba(255,255,255,0.35)" />
           </View>
         </View>
 
         {/* Meta */}
         <View style={styles.meta}>
           <Text style={styles.plName}>{playlist.name}</Text>
-          <Text style={styles.plDesc}>{playlist.description}</Text>
-          <Text style={styles.plStats}>{playlist.trackCount} songs • 1 hr 42 min</Text>
+          <Text style={styles.plStats}>{playlist.trackCount} songs • {durationLabel}</Text>
 
           {/* Action row */}
           <View style={styles.actions}>
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.accent }]} onPress={() => navigation.navigate('NowPlaying')}>
+            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.accent }]} onPress={handlePlay}>
               <Ionicons name="play" size={18} color={colors.white} />
               <Text style={styles.actionBtnTxt}>Play</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtnOutline} onPress={() => navigation.navigate('NowPlaying')}>
+            <TouchableOpacity style={styles.actionBtnOutline} onPress={handleShuffle}>
               <Ionicons name="shuffle" size={16} color={colors.accentLight} />
               <Text style={styles.actionOutlineTxt}>Shuffle</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconAction} onPress={() => setIsFollowing(!isFollowing)}>
-              <Ionicons name={isFollowing ? 'heart' : 'heart-outline'} size={22} color={isFollowing ? colors.pink : colors.textSecondary} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconAction}>
-              <Ionicons name="download-outline" size={22} color={colors.textSecondary} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconAction}>
-              <Ionicons name="share-social-outline" size={22} color={colors.textSecondary} />
+            <TouchableOpacity style={styles.iconAction} onPress={() => {
+              // Toggle favorite for all tracks in playlist
+              for (const t of tracks) {
+                if (!t.isFavorite) dispatch({ type: 'TOGGLE_FAVORITE', trackId: t.id });
+              }
+            }}>
+              <Ionicons name="heart-outline" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -66,25 +106,22 @@ export default function PlaylistScreen() {
         <View style={styles.tracksSection}>
           <View style={styles.tracksHeader}>
             <Text style={styles.tracksSectionTitle}>Tracks</Text>
-            <TouchableOpacity style={styles.addTrackBtn}>
-              <Ionicons name="add" size={18} color={colors.accentLight} />
-              <Text style={styles.addTrackTxt}>Add Songs</Text>
-            </TouchableOpacity>
           </View>
-          {TRACKS.map((t, i) => (
-            <View key={t.id} style={styles.trackRow}>
-              <Text style={styles.trackNum}>{i + 1}</Text>
-              <View style={{ flex: 1 }}>
-                <TrackItem track={t} onPress={() => navigation.navigate('NowPlaying')} />
-              </View>
+          {tracks.length === 0 ? (
+            <View style={styles.emptyTracks}>
+              <Ionicons name="musical-notes-outline" size={32} color={colors.textMuted} />
+              <Text style={styles.emptyTracksTxt}>No tracks in this folder</Text>
             </View>
-          ))}
-        </View>
-
-        {/* Credits */}
-        <View style={styles.credits}>
-          <Text style={styles.creditsTitle}>About this playlist</Text>
-          <Text style={styles.creditsBody}>{playlist.description} — curated for those late-hour sessions when only the right track matters.</Text>
+          ) : (
+            tracks.map((t, i) => (
+              <View key={t.id} style={styles.trackRow}>
+                <Text style={styles.trackNum}>{i + 1}</Text>
+                <View style={{ flex: 1 }}>
+                  <TrackItem track={t} onPress={() => handlePlayTrack(i)} />
+                </View>
+              </View>
+            ))
+          )}
         </View>
 
         <View style={{ height: 24 }} />
@@ -103,7 +140,6 @@ const styles = StyleSheet.create({
   heroArt: { opacity: 1 },
   meta: { paddingHorizontal: spacing.base, paddingTop: spacing.lg },
   plName: { fontSize: typography.xxl, fontWeight: typography.extrabold, color: colors.textPrimary },
-  plDesc: { fontSize: typography.base, color: colors.textSecondary, marginTop: spacing.xs },
   plStats: { fontSize: typography.sm, color: colors.textMuted, marginTop: spacing.xs, marginBottom: spacing.lg },
   actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xl },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, borderRadius: radius.full, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + 2 },
@@ -114,11 +150,8 @@ const styles = StyleSheet.create({
   tracksSection: { paddingHorizontal: spacing.base },
   tracksHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
   tracksSectionTitle: { fontSize: typography.md, fontWeight: typography.bold, color: colors.textPrimary },
-  addTrackBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  addTrackTxt: { fontSize: typography.sm, color: colors.accentLight, fontWeight: typography.medium },
   trackRow: { flexDirection: 'row', alignItems: 'center' },
   trackNum: { width: 24, fontSize: typography.sm, color: colors.textMuted, textAlign: 'center', marginRight: spacing.xs },
-  credits: { margin: spacing.base, padding: spacing.base, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg },
-  creditsTitle: { fontSize: typography.sm, fontWeight: typography.bold, color: colors.textSecondary, marginBottom: spacing.xs },
-  creditsBody: { fontSize: typography.sm, color: colors.textMuted, lineHeight: 20 },
+  emptyTracks: { alignItems: 'center', paddingVertical: spacing.xxl, gap: spacing.sm },
+  emptyTracksTxt: { fontSize: typography.sm, color: colors.textMuted },
 });

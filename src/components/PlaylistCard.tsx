@@ -7,7 +7,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, typography } from '../theme';
-import { Playlist } from '../data/mockData';
+import { Playlist } from '../types/music';
 
 type Props = {
   playlist: Playlist;
@@ -26,7 +26,7 @@ export default function PlaylistCard({ playlist, onPress, size = 150 }: Props) {
       <View style={[styles.art, { height: size, backgroundColor: playlist.colorA }]}>
         <View style={[styles.artOverlay, { backgroundColor: playlist.colorB + '55' }]} />
         <View style={styles.artIconWrapper}>
-          <Ionicons name="musical-notes" size={size * 0.28} color="rgba(255,255,255,0.9)" />
+          <Ionicons name="folder-open" size={size * 0.28} color="rgba(255,255,255,0.9)" />
         </View>
         {/* Play button overlay */}
         <View style={styles.playOverlay}>

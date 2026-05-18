@@ -7,25 +7,36 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { colors, spacing, radius, typography } from '../theme';
-import { NOW_PLAYING } from '../data/mockData';
+import { usePlayer } from '../store/MusicProvider';
 
 type Props = {
   onPress?: () => void;
 };
 
 export default function MiniPlayer({ onPress }: Props) {
-  const track = NOW_PLAYING;
-  const PROGRESS = 0.38;
+  const navigation = useNavigation<any>();
+  const { currentTrack, isPlaying, positionMs, durationMs, togglePlayPause, nextTrack, prevTrack } = usePlayer();
+
+  // Hide when no track is loaded
+  if (!currentTrack) return null;
+
+  const progress = durationMs > 0 ? positionMs / durationMs : 0;
+
+  const handlePress = () => {
+    if (onPress) onPress();
+    navigation.navigate('NowPlaying');
+  };
 
   return (
     <View style={styles.wrapper}>
       {/* Progress bar at the very top */}
       <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${PROGRESS * 100}%` }]} />
+        <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
       </View>
 
-      <TouchableOpacity style={styles.container} onPress={onPress} activeOpacity={0.85}>
+      <TouchableOpacity style={styles.container} onPress={handlePress} activeOpacity={0.85}>
         {/* Album icon */}
         <View style={styles.artWrapper}>
           <View style={styles.artBg}>
@@ -35,19 +46,18 @@ export default function MiniPlayer({ onPress }: Props) {
 
         {/* Track info */}
         <View style={styles.info}>
-          <Text style={styles.title} numberOfLines={1}>{track.title}</Text>
-          <Text style={styles.artist} numberOfLines={1}>{track.artist}</Text>
+          <Text style={styles.title} numberOfLines={1}>{currentTrack.title}</Text>
         </View>
 
         {/* Controls */}
         <View style={styles.controls}>
-          <TouchableOpacity style={styles.ctrlBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <TouchableOpacity style={styles.ctrlBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={prevTrack}>
             <Ionicons name="play-skip-back" size={18} color={colors.textSecondary} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.playBtn}>
-            <Ionicons name="pause" size={20} color={colors.white} />
+          <TouchableOpacity style={styles.playBtn} onPress={togglePlayPause}>
+            <Ionicons name={isPlaying ? 'pause' : 'play'} size={20} color={colors.white} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.ctrlBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <TouchableOpacity style={styles.ctrlBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} onPress={nextTrack}>
             <Ionicons name="play-skip-forward" size={18} color={colors.textSecondary} />
           </TouchableOpacity>
         </View>
@@ -109,11 +119,6 @@ const styles = StyleSheet.create({
     fontSize: typography.base,
     fontWeight: typography.semibold,
     color: colors.textPrimary,
-  },
-  artist: {
-    fontSize: typography.sm,
-    color: colors.textSecondary,
-    marginTop: 2,
   },
   controls: {
     flexDirection: 'row',
