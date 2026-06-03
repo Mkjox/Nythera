@@ -60,6 +60,18 @@ export async function resume(): Promise<void> {
   if (player) player.play();
 }
 
+export async function toggle(): Promise<void> {
+  if (!player) return;
+  try {
+    // Use runtime check to avoid type issues with the upstream AudioPlayer type
+    const p: any = player as any;
+    if (p.playing) await p.pause();
+    else await p.play();
+  } catch (e) {
+    console.warn('Audio toggle failed', e);
+  }
+}
+
 export async function stop(): Promise<void> {
   if (player) {
     player.pause();
@@ -77,7 +89,27 @@ export async function seekTo(positionMs: number): Promise<void> {
 }
 
 export async function setPlaybackSpeed(rate: number): Promise<void> {
-  if (player) player.playbackRate = rate;
+  if (!player) return;
+  const p: any = player as any;
+  try {
+    // Prefer an async API if available
+    if (typeof p.setRateAsync === 'function') {
+      // setRateAsync(rate, shouldCorrectPitch)
+      await p.setRateAsync(rate, true);
+      return;
+    }
+    if (typeof p.setRate === 'function') {
+      p.setRate(rate);
+      return;
+    }
+    // Fallback to direct property if it exists
+    if ('playbackRate' in p) {
+      p.playbackRate = rate;
+      return;
+    }
+  } catch (e) {
+    console.warn('Failed to set playback speed', e);
+  }
 }
 
 export function isLoaded(): boolean {

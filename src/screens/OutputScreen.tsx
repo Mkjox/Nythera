@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { colors, spacing, radius, typography } from '../theme';
+// local state only to avoid dispatch typing issues
 
 const DEVICES = [
   { id: 'd1', name: 'AirPods Pro', type: 'bluetooth', connected: true, battery: 82 },

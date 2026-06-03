@@ -1,5 +1,6 @@
-import React, { useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useCallback, useMemo } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -15,7 +16,7 @@ export default function PlaylistScreen() {
 
   const playlistId = route.params?.playlistId;
   const playlist = playlists.find(p => p.id === playlistId);
-  const tracks = playlist ? getPlaylistTracks(playlistId) : [];
+  const tracks = useMemo(() => (playlist ? getPlaylistTracks(playlistId) : []), [playlistId, playlist?.trackIds?.join(','), getPlaylistTracks]);
 
   const totalDuration = tracks.reduce((sum, t) => sum + t.durationSec, 0);
   const totalMins = Math.floor(totalDuration / 60);
@@ -23,22 +24,34 @@ export default function PlaylistScreen() {
   const remainMins = totalMins % 60;
   const durationLabel = totalHrs > 0 ? `${totalHrs} hr ${remainMins} min` : `${totalMins} min`;
 
-  const handlePlay = useCallback(() => {
+  const handlePlay = useCallback(async () => {
     if (tracks.length > 0) {
       playTrack(tracks[0], tracks, 0);
+      try {
+        const val = await AsyncStorage.getItem('@nythera_open_player_on_play');
+        if (val === '1') navigation.navigate('NowPlaying');
+      } catch (e) { /* ignore */ }
     }
-  }, [tracks, playTrack]);
+  }, [tracks, playTrack, navigation]);
 
-  const handleShuffle = useCallback(() => {
+  const handleShuffle = useCallback(async () => {
     if (tracks.length > 0) {
       const shuffled = [...tracks].sort(() => Math.random() - 0.5);
       playTrack(shuffled[0], shuffled, 0);
+      try {
+        const val = await AsyncStorage.getItem('@nythera_open_player_on_play');
+        if (val === '1') navigation.navigate('NowPlaying');
+      } catch (e) { /* ignore */ }
     }
-  }, [tracks, playTrack]);
+  }, [tracks, playTrack, navigation]);
 
-  const handlePlayTrack = useCallback((index: number) => {
+  const handlePlayTrack = useCallback(async (index: number) => {
     playTrack(tracks[index], tracks, index);
-  }, [tracks, playTrack]);
+    try {
+      const val = await AsyncStorage.getItem('@nythera_open_player_on_play');
+      if (val === '1') navigation.navigate('NowPlaying');
+    } catch (e) { /* ignore */ }
+  }, [tracks, playTrack, navigation]);
 
   if (!playlist) {
     return (
@@ -62,9 +75,7 @@ export default function PlaylistScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.moreBtn}>
-          <Ionicons name="ellipsis-horizontal" size={22} color={colors.textSecondary} />
-        </TouchableOpacity>
+        {/* removed header ellipsis per UX: no folder-level menu here */}
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -113,14 +124,19 @@ export default function PlaylistScreen() {
               <Text style={styles.emptyTracksTxt}>No tracks in this folder</Text>
             </View>
           ) : (
-            tracks.map((t, i) => (
-              <View key={t.id} style={styles.trackRow}>
-                <Text style={styles.trackNum}>{i + 1}</Text>
-                <View style={{ flex: 1 }}>
-                  <TrackItem track={t} onPress={() => handlePlayTrack(i)} />
+            <FlatList
+              data={tracks}
+              keyExtractor={(it) => it.id}
+              contentContainerStyle={{ paddingHorizontal: spacing.base }}
+              renderItem={({ item, index }) => (
+                <View style={styles.trackRow}>
+                  <Text style={styles.trackNum}>{index + 1}</Text>
+                  <View style={{ flex: 1 }}>
+                    <TrackItem track={item} onPress={() => handlePlayTrack(index)} />
+                  </View>
                 </View>
-              </View>
-            ))
+              )}
+            />
           )}
         </View>
 

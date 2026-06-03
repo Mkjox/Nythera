@@ -1,5 +1,6 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import React, { useState, useCallback, useMemo } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -11,25 +12,33 @@ import PlaylistCard from '../components/PlaylistCard';
 import SectionHeader from '../components/SectionHeader';
 
 const TABS = ['Songs', 'Playlists', 'Folders'];
-const SORTS = ['Title', 'Duration'];
+const SORTS = ['Default', 'Title', 'Duration'];
 
 export default function LibraryScreen() {
   const navigation = useNavigation<any>();
   const { playlists, isScanning, hasPermission, dispatch, getAllTracks, removeFolder } = useLibrary();
   const { playTrack } = usePlayer();
   const [activeTab, setActiveTab] = useState('Songs');
-  const [activeSort, setActiveSort] = useState('Title');
+  const [activeSort, setActiveSort] = useState('Default');
+  const [titleAsc, setTitleAsc] = useState(true);
   const [sortOpen, setSortOpen] = useState(false);
   const [multiSelect, setMultiSelect] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
 
-  const allTracks = getAllTracks();
+  const sortedTracks = useMemo(() => {
+    const all = getAllTracks();
+    const copy = [...all];
+    if (activeSort === 'Title') return copy.sort((a, b) => titleAsc ? a.title.localeCompare(b.title) : b.title.localeCompare(a.title));
+    if (activeSort === 'Duration') return copy.sort((a, b) => a.durationSec - b.durationSec);
+    return copy;
+  }, [getAllTracks, activeSort, titleAsc]);
 
-  const sortedTracks = [...allTracks].sort((a, b) => {
-    if (activeSort === 'Title') return a.title.localeCompare(b.title);
-    if (activeSort === 'Duration') return a.durationSec - b.durationSec;
-    return 0;
-  });
+  const sortedPlaylists = useMemo(() => {
+    const copy = [...playlists];
+    if (activeSort === 'Title') return copy.sort((a, b) => titleAsc ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name));
+    if (activeSort === 'Duration') return copy.sort((a, b) => a.trackCount - b.trackCount);
+    return copy;
+  }, [playlists, activeSort, titleAsc]);
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
@@ -69,6 +78,13 @@ export default function LibraryScreen() {
   const handlePlayTrack = useCallback((track: any, index: number) => {
     playTrack(track, sortedTracks, index);
   }, [sortedTracks, playTrack]);
+  const handlePlayTrackAndMaybeOpen = useCallback(async (track: any, index: number) => {
+    playTrack(track, sortedTracks, index);
+    try {
+      const val = await AsyncStorage.getItem('@nythera_open_player_on_play');
+      if (val === '1') navigation.navigate('NowPlaying');
+    } catch (e) { /* ignore */ }
+  }, [sortedTracks, playTrack, navigation]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -97,14 +113,14 @@ export default function LibraryScreen() {
       </View>
 
       {/* Sort bar */}
-      {activeTab === 'Songs' && (
+      { (activeTab === 'Songs' || activeTab === 'Folders') && (
         <View style={styles.sortBar}>
           <TouchableOpacity style={styles.sortBtn} onPress={() => setSortOpen(!sortOpen)}>
             <Ionicons name="filter" size={15} color={colors.textSecondary} />
-            <Text style={styles.sortTxt}>{activeSort}</Text>
+            <Text style={styles.sortTxt}>{activeSort === 'Title' ? `Title ${titleAsc ? 'A→Z' : 'Z→A'}` : activeSort}</Text>
             <Ionicons name={sortOpen ? 'chevron-up' : 'chevron-down'} size={13} color={colors.textMuted} />
           </TouchableOpacity>
-          <Text style={styles.countTxt}>{sortedTracks.length} items</Text>
+          <Text style={styles.countTxt}>{activeTab === 'Songs' ? sortedTracks.length : sortedPlaylists.length} items</Text>
         </View>
       )}
 
@@ -112,7 +128,23 @@ export default function LibraryScreen() {
       {sortOpen && (
         <View style={styles.dropdown}>
           {SORTS.map((s) => (
-            <TouchableOpacity key={s} style={styles.dropItem} onPress={() => { setActiveSort(s); setSortOpen(false); }}>
+            <TouchableOpacity
+              key={s}
+              style={styles.dropItem}
+              onPress={() => {
+                if (s === 'Title') {
+                  if (activeSort === 'Title') {
+                    setTitleAsc(!titleAsc);
+                  } else {
+                    setActiveSort('Title');
+                    setTitleAsc(true);
+                  }
+                } else {
+                  setActiveSort(s);
+                }
+                setSortOpen(false);
+              }}
+            >
               <Text style={[styles.dropItemTxt, s === activeSort && { color: colors.accentLight }]}>{s}</Text>
               {s === activeSort && <Ionicons name="checkmark" size={16} color={colors.accentLight} />}
             </TouchableOpacity>
@@ -136,88 +168,94 @@ export default function LibraryScreen() {
         </View>
       )}
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
-        {activeTab === 'Songs' && (
-          allTracks.length === 0 ? (
-            <View style={styles.empty}>
-              <Ionicons name="musical-notes-outline" size={48} color={colors.textMuted} />
-              <Text style={styles.emptyTxt}>No songs found</Text>
-              <Text style={styles.emptySub}>Scan your device to import music</Text>
-            </View>
-          ) : (
-            sortedTracks.map((t, i) => (
-              <View key={t.id} style={[styles.selectableRow, multiSelect && selected.includes(t.id) && styles.selectedRow]}>
+      {activeTab === 'Songs' ? (
+        sortedTracks.length === 0 ? (
+          <View style={styles.empty}>
+            <Ionicons name="musical-notes-outline" size={48} color={colors.textMuted} />
+            <Text style={styles.emptyTxt}>No songs found</Text>
+            <Text style={styles.emptySub}>Scan your device to import music</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={sortedTracks}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            renderItem={({ item, index }) => (
+              <View style={[styles.selectableRow, multiSelect && selected.includes(item.id) && styles.selectedRow]}>
                 {multiSelect && (
-                  <TouchableOpacity onPress={() => toggleSelect(t.id)} style={styles.checkBtn}>
-                    <View style={[styles.checkbox, selected.includes(t.id) && styles.checkboxChecked]}>
-                      {selected.includes(t.id) && <Ionicons name="checkmark" size={12} color={colors.white} />}
+                  <TouchableOpacity onPress={() => toggleSelect(item.id)} style={styles.checkBtn}>
+                    <View style={[styles.checkbox, selected.includes(item.id) && styles.checkboxChecked]}>
+                      {selected.includes(item.id) && <Ionicons name="checkmark" size={12} color={colors.white} />}
                     </View>
                   </TouchableOpacity>
                 )}
                 <View style={{ flex: 1 }}>
-                  <TrackItem track={t} onPress={() => handlePlayTrack(t, i)} />
+                  <TrackItem track={item} onPress={() => handlePlayTrack(item, index)} />
                 </View>
               </View>
-            ))
-          )
-        )}
+            )}
+            ListFooterComponent={<View style={{ height: 24 }} />}
+          />
+        )
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.listContent}>
+          {activeTab === 'Playlists' && (
+            sortedPlaylists.length === 0 ? (
+              <View style={styles.empty}>
+                <Ionicons name="albums-outline" size={48} color={colors.textMuted} />
+                <Text style={styles.emptyTxt}>No playlists yet</Text>
+                <Text style={styles.emptySub}>Import folders to create playlists</Text>
+              </View>
+            ) : (
+              <View style={styles.plGrid}>
+                {sortedPlaylists.map((pl) => (
+                  <PlaylistCard key={pl.id} playlist={pl} onPress={() => navigation.navigate('Playlist', { playlistId: pl.id })} size={160} />
+                ))}
+              </View>
+            )
+          )}
 
-        {activeTab === 'Playlists' && (
-          playlists.length === 0 ? (
-            <View style={styles.empty}>
-              <Ionicons name="albums-outline" size={48} color={colors.textMuted} />
-              <Text style={styles.emptyTxt}>No playlists yet</Text>
-              <Text style={styles.emptySub}>Import folders to create playlists</Text>
-            </View>
-          ) : (
-            <View style={styles.plGrid}>
-              {playlists.map((pl) => (
-                <PlaylistCard key={pl.id} playlist={pl} onPress={() => navigation.navigate('Playlist', { playlistId: pl.id })} size={160} />
-              ))}
-            </View>
-          )
-        )}
-
-        {activeTab === 'Folders' && (
-          playlists.length === 0 ? (
-            <View style={styles.empty}>
-              <Ionicons name="folder-open-outline" size={48} color={colors.textMuted} />
-              <Text style={styles.emptyTxt}>No folders imported</Text>
-              <TouchableOpacity style={styles.scanBtn} onPress={handleImport}>
-                <Ionicons name="scan" size={16} color={colors.white} />
-                <Text style={styles.scanBtnTxt}>Scan Device</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            playlists.map((pl) => (
-              <View key={pl.id} style={styles.folderRow}>
-                <TouchableOpacity
-                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
-                  onPress={() => navigation.navigate('Playlist', { playlistId: pl.id })}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.folderIcon, { backgroundColor: pl.colorA + '33' }]}>
-                    <Ionicons name="folder" size={22} color={pl.colorA} />
-                  </View>
-                  <View style={styles.folderInfo}>
-                    <Text style={styles.folderName} numberOfLines={1}>{pl.name}</Text>
-                    <Text style={styles.folderMeta}>{pl.trackCount} tracks</Text>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.folderDelete}
-                  onPress={() => handleDeleteFolder(pl.id, pl.name)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="trash-outline" size={18} color={colors.red} />
+          {activeTab === 'Folders' && (
+            sortedPlaylists.length === 0 ? (
+              <View style={styles.empty}>
+                <Ionicons name="folder-open-outline" size={48} color={colors.textMuted} />
+                <Text style={styles.emptyTxt}>No folders imported</Text>
+                <TouchableOpacity style={styles.scanBtn} onPress={handleImport}>
+                  <Ionicons name="scan" size={16} color={colors.white} />
+                  <Text style={styles.scanBtnTxt}>Scan Device</Text>
                 </TouchableOpacity>
               </View>
-            ))
-          )
-        )}
+            ) : (
+              sortedPlaylists.map((pl) => (
+                <View key={pl.id} style={styles.folderRow}>
+                  <TouchableOpacity
+                    style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+                    onPress={() => navigation.navigate('Playlist', { playlistId: pl.id })}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.folderIcon, { backgroundColor: pl.colorA + '33' }]}>
+                      <Ionicons name="folder" size={22} color={pl.colorA} />
+                    </View>
+                    <View style={styles.folderInfo}>
+                      <Text style={styles.folderName} numberOfLines={1}>{pl.name}</Text>
+                      <Text style={styles.folderMeta}>{pl.trackCount} tracks</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.folderDelete}
+                    onPress={() => handleDeleteFolder(pl.id, pl.name)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="trash-outline" size={18} color={colors.red} />
+                  </TouchableOpacity>
+                </View>
+              ))
+            )
+          )}
 
-        <View style={{ height: 24 }} />
-      </ScrollView>
+          <View style={{ height: 24 }} />
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }

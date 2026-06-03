@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,12 +9,14 @@ import { colors, spacing, radius, typography } from '../theme';
 import { useLibrary, usePlayer } from '../store/MusicProvider';
 import { scanAudioFiles, requestMediaPermission } from '../services/scanService';
 import PlaylistCard from '../components/PlaylistCard';
+import AlbumPickerModal from '../components/AlbumPickerModal';
 import TrackItem from '../components/TrackItem';
 import SectionHeader from '../components/SectionHeader';
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
-  const { playlists, isScanning, hasPermission, dispatch, getAllTracks, getRecentTracks, getFavoriteTracks } = useLibrary();
+  const { playlists, isScanning, hasPermission, dispatch, getAllTracks, getRecentTracks, getFavoriteTracks, removeFolder } = useLibrary();
+  const [pickerVisible, setPickerVisible] = React.useState(false);
   const { playTrack } = usePlayer();
 
   const allTracks = getAllTracks();
@@ -52,13 +54,25 @@ export default function HomeScreen() {
     playTrack(track, trackList, index);
   }, [playTrack]);
 
+  const handleDeleteFolder = useCallback((playlistId: string, name: string) => {
+    Alert.alert(
+      'Remove Folder',
+      `Are you sure you want to remove "${name}" and all its tracks from your library?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: () => removeFolder(playlistId) },
+      ]
+    );
+  }, [removeFolder]);
+
   // Greeting based on time of day
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <>
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
           <View>
@@ -89,6 +103,10 @@ export default function HomeScreen() {
           <TouchableOpacity style={styles.chip} onPress={handleImport}>
             <Ionicons name="scan-outline" size={14} color={colors.accentLight} />
             <Text style={styles.chipText}>{isScanning ? 'Scanning…' : 'Scan Device'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.chip} onPress={() => setPickerVisible(true)}>
+            <Ionicons name="folder-open" size={14} color={colors.accentLight} />
+            <Text style={styles.chipText}>Import Folders</Text>
           </TouchableOpacity>
         </ScrollView>
 
@@ -136,7 +154,13 @@ export default function HomeScreen() {
                 <SectionHeader title="Your Folders" actionLabel="Library" onAction={() => navigation.navigate('Library')} />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList}>
                   {playlists.slice(0, 6).map((pl) => (
-                    <PlaylistCard key={pl.id} playlist={pl} onPress={() => navigation.navigate('Playlist', { playlistId: pl.id })} size={148} />
+                    <PlaylistCard
+                      key={pl.id}
+                      playlist={pl}
+                      onPress={() => navigation.navigate('Playlist', { playlistId: pl.id })}
+                      onDelete={() => handleDeleteFolder(pl.id, pl.name)}
+                      size={148}
+                    />
                   ))}
                 </ScrollView>
               </View>
@@ -168,7 +192,13 @@ export default function HomeScreen() {
                 <SectionHeader title="More Folders" actionLabel="Library" onAction={() => navigation.navigate('Library')} />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList}>
                   {playlists.slice(1).map((pl) => (
-                    <PlaylistCard key={pl.id} playlist={pl} onPress={() => navigation.navigate('Playlist', { playlistId: pl.id })} size={130} />
+                    <PlaylistCard
+                      key={pl.id}
+                      playlist={pl}
+                      onPress={() => navigation.navigate('Playlist', { playlistId: pl.id })}
+                      onDelete={() => handleDeleteFolder(pl.id, pl.name)}
+                      size={130}
+                    />
                   ))}
                 </ScrollView>
               </View>
@@ -177,8 +207,10 @@ export default function HomeScreen() {
         )}
 
         <View style={{ height: 24 }} />
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+      <AlbumPickerModal visible={pickerVisible} onClose={() => setPickerVisible(false)} />
+    </>
   );
 }
 

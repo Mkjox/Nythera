@@ -1,66 +1,9 @@
-# Nythera - Local Music Player Implementation Roadmap
+All on the music player screen
 
-Transition the app into a strictly local, offline-first music player that scans native directories, imports folders as playlists, plays local audio files, and functions entirely without network or cloud activity.
+- on player queue button doesn't work
 
----
+- output button navigates to a screen with bunch of dummy data
 
-## 🔒 Strict Offline Policy
-- **NO Cloud Activity**: The app must operate 100% offline. Zero network calls, zero external telemetry/analytics, and zero reliance on remote streaming.
-- **Pure Local Storage**: Playlist structures, user settings, play history, and favorites must be persisted strictly on-device using a fast offline store.
+- speed option doesn't change anything
 
----
-
-## 📋 Step-by-Step Task List
-
-### 1. File Access & Directory Scanning Infrastructure
-- [ ] **Install & Configure Local Filesystem Access**:
-  - Integrate `expo-document-picker` or a compatible directory picker wrapper (e.g. `react-native-document-picker` or custom native SAF/Storage Access Framework integration) to allow the user to select an entire folder on their device.
-  - Set up required permissions in `app.json` for reading device external storage (Android) and document access (iOS).
-- [ ] **Folder Scanning Engine**:
-  - Implement a recursive/flat scanner using `expo-file-system` to find all audio files with extensions: `.mp3`, `.m4a`, `.wav`, `.ogg`, `.flac`, `.aac`.
-  - Gather file properties (URI, filename, file size, modification date).
-- [ ] **Metadata Extraction Parser**:
-  - Create a pure JS or native audio metadata parser to extract ID3/metadata tags (Track Title, Artist Name, Album Name, Duration/Seconds, Album Art) from local file streams.
-  - Fall back cleanly to the filename if metadata tags are missing or corrupt.
-
-### 2. Local Database & Persistence Layer
-- [ ] **Define Data Models**:
-  - Map local files to the existing `Track` type, setting `id` as a hash or file path URI, and `isDownloaded` to `true`.
-  - Map imported folders to the `Playlist` type, using the folder's name as the playlist name and a custom-generated ID.
-- [ ] **Implement Offline Storage Store**:
-  - Integrate `AsyncStorage` or `react-native-mmkv` to store lists of imported folders, scanned track details, playback queue history, and user favorites.
-  - Build helper methods to:
-    - Save a new imported folder/playlist.
-    - Refresh/re-scan an already imported folder.
-    - Delete/remove an imported folder playlist.
-    - Mark tracks as favorites.
-
-### 3. Audio Playback Integration
-- [ ] **Local Playback Support**:
-  - Configure the audio engine (`expo-av` or `react-native-track-player`) to stream audio directly from native file URIs (`file:///...` or `content://...`).
-  - Handle audio focus, background playback, and system media control center notifications without crashing.
-- [ ] **Queue and History Management**:
-  - Manage the current queue using active local track objects.
-  - Save history items directly into the local database upon track completion.
-
-### 4. UI Refactoring & Screen Updates
-- [ ] **Create Folder Import UI**:
-  - Add an "Import Folder" button on the **HomeScreen** and **LibraryScreen**.
-  - Design a beautiful "Empty State" UI displayed when no folders have been imported yet ("No local tracks found. Select a folder to import your music collection offline!").
-- [ ] **Update Existing Screens to Pull from Storage**:
-  - Refactor all screens to query the local database instead of import data from `mockData.ts`:
-    - **HomeScreen**: Show recent tracks, suggested local playlists, and quick import shortcuts.
-    - **LibraryScreen**: Display imported folder playlists and user-created custom playlists.
-    - **PlaylistScreen**: Dynamic rendering based on files inside the folder URI.
-    - **SearchScreen**: Implement full-text local search across imported tracks, artists, and folders.
-    - **QueueScreen**: Show current active local player queue.
-    - **NowPlayingScreen**: Bind all playback details, duration sliders, and control buttons to local player state.
-    - **HistoryScreen**: Display play history fetched from local storage.
-    - **DownloadsScreen**: Convert this screen into a "Local Storage Manager" since all tracks are now native, displaying total local music size and sync statistics.
-- [ ] **Update Components**:
-  - Adapt `TrackItem`, `PlaylistCard`, and `MiniPlayer` to take dynamic local track/playlist data.
-
-### 5. Mock Data Removal
-- [ ] **Remove `mockData.ts` Imports**:
-  - Go through all files and remove mock data declarations.
-  - Delete `src/data/mockData.ts` entirely, keeping only the TypeScript type definitions (`Track`, `Playlist`, `Artist`) in a clean types file (e.g. `src/types/music.ts`).
+- three dots doesn't work

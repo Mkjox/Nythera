@@ -26,6 +26,7 @@ export type MusicState = {
   isScanning: boolean;
   hasPermission: boolean;
   isInitialised: boolean;
+  outputDevice?: string;
 };
 
 const initialState: MusicState = {
@@ -44,6 +45,7 @@ const initialState: MusicState = {
   isScanning: false,
   hasPermission: false,
   isInitialised: false,
+  outputDevice: 'phone',
 };
 
 // ─── Actions ────────────────────────────────────────────────────
@@ -68,7 +70,8 @@ type Action =
   | { type: 'ADD_HISTORY'; entry: HistoryEntry }
   | { type: 'CLEAR_HISTORY' }
   | { type: 'RESTORE_HISTORY'; history: HistoryEntry[] }
-  | { type: 'RESTORE_PLAYLISTS'; playlists: Playlist[] };
+  | { type: 'RESTORE_PLAYLISTS'; playlists: Playlist[] }
+  | { type: 'SET_OUTPUT_DEVICE'; id: string };
 
 // ─── Reducer ────────────────────────────────────────────────────
 function reducer(state: MusicState, action: Action): MusicState {
@@ -208,7 +211,19 @@ function reducer(state: MusicState, action: Action): MusicState {
     case 'SET_POSITION':
       return { ...state, positionMs: action.positionMs, durationMs: action.durationMs };
     case 'SET_SHUFFLE':
-      return { ...state, shuffle: action.value };
+      if (action.value && state.queue.length > 0) {
+        // Enable shuffle: keep currentTrack at front, shuffle the rest
+        const currentId = state.currentTrack?.id ?? null;
+        const rest = state.queue.filter(t => t.id !== currentId);
+        for (let i = rest.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [rest[i], rest[j]] = [rest[j], rest[i]];
+        }
+        const newQueue = currentId ? [state.currentTrack!, ...rest] : rest;
+        return { ...state, shuffle: true, queue: newQueue, queueIndex: currentId ? 0 : -1 };
+      }
+      // Disabling shuffle: keep current queue order as-is
+      return { ...state, shuffle: false };
     case 'SET_REPEAT':
       return { ...state, repeat: action.value };
     case 'ADD_HISTORY':
@@ -219,6 +234,8 @@ function reducer(state: MusicState, action: Action): MusicState {
       return { ...state, history: action.history };
     case 'RESTORE_PLAYLISTS':
       return { ...state, playlists: action.playlists };
+    case 'SET_OUTPUT_DEVICE':
+      return { ...state, outputDevice: action.id };
     default:
       return state;
   }
@@ -228,6 +245,7 @@ function reducer(state: MusicState, action: Action): MusicState {
 type MusicContextType = {
   state: MusicState;
   dispatch: React.Dispatch<Action>;
+  setOutputDevice: (id: string) => void;
   playTrack: (track: Track, queue?: Track[], index?: number) => Promise<void>;
   togglePlayPause: () => Promise<void>;
   nextTrack: () => Promise<void>;
@@ -320,26 +338,48 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Listen for track completion
+  const playStateTimerRef = useRef<number | null>(null);
+  const lastPlayingRef = useRef<boolean>(false);
+
   useEffect(() => {
     audioService.onPlaybackStatus((ps: PlaybackState) => {
       const s = stateRef.current;
       if (ps.isLoaded) {
+        // Update position immediately
         dispatch({ type: 'SET_POSITION', positionMs: ps.positionMs, durationMs: ps.durationMs });
-        dispatch({ type: 'SET_PLAYING', value: ps.isPlaying });
 
-        // Track finished
+        // Debounce transient isPlaying toggles (buffering spikes can flip this briefly)
+        if (ps.isPlaying !== lastPlayingRef.current) {
+          if (playStateTimerRef.current) {
+            clearTimeout(playStateTimerRef.current);
+            playStateTimerRef.current = null;
+          }
+          playStateTimerRef.current = (setTimeout(() => {
+            dispatch({ type: 'SET_PLAYING', value: ps.isPlaying });
+            lastPlayingRef.current = ps.isPlaying;
+            playStateTimerRef.current = null;
+          }, 250) as unknown) as number;
+        }
+
+        // Track finished detection
         if (!ps.isPlaying && ps.positionMs > 0 && ps.durationMs > 0 && ps.positionMs >= ps.durationMs - 500) {
           if (s.currentTrack) {
             dispatch({ type: 'ADD_HISTORY', entry: { trackId: s.currentTrack.id, playedAt: Date.now() } });
           }
-          // Auto-advance
-          const nextAction = (): void => {
-            dispatch({ type: 'NEXT_TRACK' });
-          };
-          setTimeout(nextAction, 100);
+          setTimeout(() => dispatch({ type: 'NEXT_TRACK' }), 100);
         }
+      } else {
+        dispatch({ type: 'SET_PLAYING', value: false });
+        dispatch({ type: 'SET_POSITION', positionMs: 0, durationMs: 0 });
       }
     });
+
+    return () => {
+      if (playStateTimerRef.current) {
+        clearTimeout(playStateTimerRef.current);
+        playStateTimerRef.current = null;
+      }
+    };
   }, []);
 
   // When currentTrack changes via NEXT/PREV, load it
@@ -360,11 +400,8 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const togglePlayPause = useCallback(async () => {
-    if (stateRef.current.isPlaying) {
-      await audioService.pause();
-    } else {
-      await audioService.resume();
-    }
+    // Use audioService.toggle which inspects the actual player state
+    await audioService.toggle();
   }, []);
 
   const nextTrack = useCallback(async () => {
@@ -422,6 +459,7 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   const value: MusicContextType = {
     state,
     dispatch,
+    setOutputDevice: (id: string) => dispatch({ type: 'SET_OUTPUT_DEVICE', id }),
     playTrack,
     togglePlayPause,
     nextTrack,

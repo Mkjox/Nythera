@@ -7,6 +7,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 import EqualizerScreen from '../screens/EqualizerScreen';
 import SleepTimerScreen from '../screens/SleepTimerScreen';
 import OutputScreen from '../screens/OutputScreen';
+import QueueScreen from '../screens/QueueScreen';
 import DownloadsScreen from '../screens/DownloadsScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 
@@ -60,6 +61,11 @@ export default function AppNavigator() {
       <Stack.Screen
         name="Output"
         component={OutputScreen}
+        options={{ animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="Queue"
+        component={QueueScreen}
         options={{ animation: 'slide_from_right' }}
       />
       <Stack.Screen

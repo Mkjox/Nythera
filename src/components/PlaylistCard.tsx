@@ -12,10 +12,11 @@ import { Playlist } from '../types/music';
 type Props = {
   playlist: Playlist;
   onPress?: () => void;
+  onDelete?: () => void;
   size?: number;
 };
 
-export default function PlaylistCard({ playlist, onPress, size = 150 }: Props) {
+export default function PlaylistCard({ playlist, onPress, onDelete, size = 150 }: Props) {
   return (
     <TouchableOpacity
       style={[styles.card, { width: size }]}
@@ -23,7 +24,13 @@ export default function PlaylistCard({ playlist, onPress, size = 150 }: Props) {
       activeOpacity={0.8}
     >
       {/* Art */}
-      <View style={[styles.art, { height: size, backgroundColor: playlist.colorA }]}>
+      <View style={[styles.art, { height: size, backgroundColor: playlist.colorA }]}> 
+        {/* optional delete button */}
+        {onDelete && (
+          <TouchableOpacity style={styles.deleteBtn} onPress={onDelete} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.95)" />
+          </TouchableOpacity>
+        )}
         <View style={[styles.artOverlay, { backgroundColor: playlist.colorB + '55' }]} />
         <View style={styles.artIconWrapper}>
           <Ionicons name="folder-open" size={size * 0.28} color="rgba(255,255,255,0.9)" />
@@ -90,5 +97,14 @@ const styles = StyleSheet.create({
     fontSize: typography.xs,
     color: colors.textMuted,
     marginTop: 2,
+  },
+  deleteBtn: {
+    position: 'absolute',
+    top: spacing.xs,
+    right: spacing.xs,
+    backgroundColor: 'rgba(0,0,0,0.32)',
+    padding: 6,
+    borderRadius: 14,
+    zIndex: 2,
   },
 });

@@ -1,4 +1,5 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,20 +14,36 @@ export default function SearchScreen() {
   const { playTrack } = usePlayer();
   const [query, setQuery] = useState('');
   const hasQuery = query.length > 0;
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
 
-  const allTracks = getAllTracks();
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 250);
+    return () => clearTimeout(t);
+  }, [query]);
 
-  const filteredTracks = hasQuery
-    ? allTracks.filter((t) => t.title.toLowerCase().includes(query.toLowerCase()))
-    : [];
+  const filteredTracks = useMemo(() => {
+    if (!debouncedQuery) return [];
+    const q = debouncedQuery.toLowerCase();
+    const all = getAllTracks();
+    return all.filter((t) => t.title.toLowerCase().includes(q));
+  }, [debouncedQuery, getAllTracks]);
 
-  const filteredPlaylists = hasQuery
-    ? playlists.filter((p) => p.name.toLowerCase().includes(query.toLowerCase()))
-    : [];
+  const filteredPlaylists = useMemo(() => {
+    if (!debouncedQuery) return [];
+    const q = debouncedQuery.toLowerCase();
+    return playlists.filter((p) => p.name.toLowerCase().includes(q));
+  }, [debouncedQuery, playlists]);
 
   const handlePlayTrack = useCallback((track: any, index: number) => {
     playTrack(track, filteredTracks, index);
   }, [filteredTracks, playTrack]);
+  const handlePlayTrackAndMaybeOpen = useCallback(async (track: any, index: number) => {
+    playTrack(track, filteredTracks, index);
+    try {
+      const val = await AsyncStorage.getItem('@nythera_open_player_on_play');
+      if (val === '1') navigation.navigate('NowPlaying');
+    } catch (e) { /* ignore */ }
+  }, [filteredTracks, playTrack, navigation]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>

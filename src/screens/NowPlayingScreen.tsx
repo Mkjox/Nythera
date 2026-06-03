@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { Alert, Share } from 'react-native';
 import { colors, spacing, radius, typography } from '../theme';
 import { usePlayer, useMusicStore } from '../store/MusicProvider';
 
@@ -71,7 +72,24 @@ export default function NowPlayingScreen() {
         <View style={styles.topCenter}>
           <Text style={styles.topEyebrow}>NOW PLAYING</Text>
         </View>
-        <TouchableOpacity style={styles.topBtn}>
+        <TouchableOpacity
+          style={styles.topBtn}
+          onPress={() => {
+            Alert.alert('Options', undefined, [
+              { text: 'Open Queue', onPress: () => navigation.navigate('Queue') },
+              { text: 'Share Track', onPress: async () => {
+                try {
+                  if (currentTrack) {
+                    await Share.share({ message: `${currentTrack.title}` });
+                  }
+                } catch (e) {
+                  console.warn(e);
+                }
+              } },
+              { text: 'Cancel', style: 'cancel' },
+            ]);
+          }}
+        >
           <Ionicons name="ellipsis-horizontal" size={22} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>

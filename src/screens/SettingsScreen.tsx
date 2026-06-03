@@ -1,10 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { colors, spacing, radius, typography } from '../theme';
 import { useLibrary } from '../store/MusicProvider';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { scanAudioFiles, requestMediaPermission } from '../services/scanService';
 
 type ToggleRowProps = { label: string; sub?: string; value: boolean; onToggle: () => void };
@@ -42,6 +43,28 @@ export default function SettingsScreen() {
   const [normalize, setNormalize] = useState(true);
   const [autoplay, setAutoplay] = useState(true);
   const [notifications, setNotifications] = useState(true);
+  const [openPlayerOnPlay, setOpenPlayerOnPlay] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const val = await AsyncStorage.getItem('@nythera_open_player_on_play');
+        if (val !== null) setOpenPlayerOnPlay(val === '1');
+      } catch (e) {
+        console.warn('Failed to load open-player setting', e);
+      }
+    })();
+  }, []);
+
+  const toggleOpenPlayer = useCallback(async () => {
+    try {
+      const next = !openPlayerOnPlay;
+      setOpenPlayerOnPlay(next);
+      await AsyncStorage.setItem('@nythera_open_player_on_play', next ? '1' : '0');
+    } catch (e) {
+      console.warn('Failed to persist open-player setting', e);
+    }
+  }, [openPlayerOnPlay]);
 
   const handleScanLibrary = useCallback(async () => {
     let perm = hasPermission;
