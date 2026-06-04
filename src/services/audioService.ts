@@ -12,6 +12,7 @@ type StatusCallback = (state: PlaybackState) => void;
 let player: AudioPlayer | null = null;
 let statusCallback: StatusCallback | null = null;
 let statusSubscription: { remove: () => void } | null = null;
+let _lastStatus: any = null;
 
 export async function configureAudioSession() {
   await setAudioModeAsync({
@@ -26,9 +27,30 @@ export function onPlaybackStatus(cb: StatusCallback) {
 }
 
 function handleStatus(status: AudioStatus) {
+  // Keep last status to detect end-of-track when player unloads in background
+  const last = _lastStatus;
+  _lastStatus = status;
   if (!status.isLoaded) {
-    if (statusCallback) {
-      statusCallback({ isPlaying: false, positionMs: 0, durationMs: 0, isLoaded: false });
+    // If the player just unloaded but the last known status indicated the track
+    // reached its end, synthesize a final 'finished' status so consumers can
+    // reliably detect track completion even when the native player unloads
+    // immediately in background.
+    if (
+      last &&
+      last.isLoaded &&
+      !last.playing &&
+      typeof last.currentTime === 'number' &&
+      typeof last.duration === 'number' &&
+      last.duration > 0 &&
+      last.currentTime >= last.duration - 0.5
+    ) {
+      if (statusCallback) {
+        statusCallback({ isPlaying: false, positionMs: Math.round((last.duration || 0) * 1000), durationMs: Math.round((last.duration || 0) * 1000), isLoaded: true });
+      }
+    } else {
+      if (statusCallback) {
+        statusCallback({ isPlaying: false, positionMs: 0, durationMs: 0, isLoaded: false });
+      }
     }
     return;
   }

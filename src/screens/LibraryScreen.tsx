@@ -297,7 +297,7 @@ const styles = StyleSheet.create({
   scanBtnTxt: { fontSize: typography.sm, fontWeight: typography.bold, color: colors.white },
   folderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
   folderIcon: { width: 48, height: 48, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
-  folderInfo: { flex: 1 },
+  folderInfo: { flex: 1, marginLeft: 12 },
   folderName: { fontSize: typography.base, fontWeight: typography.medium, color: colors.textPrimary },
   folderMeta: { fontSize: typography.sm, color: colors.textSecondary, marginTop: 2 },
   folderDelete: { padding: spacing.sm },

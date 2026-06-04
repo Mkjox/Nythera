@@ -1,22 +1,91 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Platform, PermissionsAndroid, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { colors, spacing, radius, typography } from '../theme';
-// local state only to avoid dispatch typing issues
+import { useMusicStore } from '../store/MusicProvider';
 
-const DEVICES = [
-  { id: 'd1', name: 'AirPods Pro', type: 'bluetooth', connected: true, battery: 82 },
-  { id: 'd2', name: 'Sony WH-1000XM5', type: 'bluetooth', connected: false, battery: 55 },
-  { id: 'd3', name: 'Samsung Galaxy Buds', type: 'bluetooth', connected: false, battery: 30 },
-  { id: 'd4', name: 'Living Room Chromecast', type: 'cast', connected: false, battery: null },
-  { id: 'd5', name: 'Bedroom Speaker', type: 'cast', connected: false, battery: null },
-];
+// NOTE: real audio routing requires native support (AVRoutePicker/AudioManager/Cast SDKs).
+// This screen will attempt a BLE scan via `react-native-ble-plx` when available; otherwise
+// it provides a quick link to system Bluetooth settings as a fallback.
 
 export default function OutputScreen() {
   const navigation = useNavigation<any>();
-  const [selected, setSelected] = useState('phone');
+  const { state, setOutputDevice } = useMusicStore();
+  const selected = state.outputDevice ?? 'phone';
+
+  const [devices, setDevices] = useState<Array<{ id: string; name: string; type: string }>>([]);
+  const [scanning, setScanning] = useState(false);
+  const [bleAvailable, setBleAvailable] = useState<boolean | null>(null);
+
+  const openBluetoothSettings = useCallback(async () => {
+    try {
+      if (Platform.OS === 'ios') await Linking.openURL('App-Prefs:Bluetooth');
+      else await Linking.openSettings();
+    } catch (e) {
+      Linking.openSettings().catch(() => {});
+    }
+  }, []);
+
+  const scanForBluetooth = useCallback(async () => {
+    setDevices([]);
+    setScanning(true);
+    // Request permissions on Android
+    if (Platform.OS === 'android') {
+      try {
+        const perms: any = {};
+        // Request newer BLUETOOTH permissions (no location permission requested)
+        const toRequest = [
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+        ].filter(Boolean);
+        const res = await PermissionsAndroid.requestMultiple(toRequest as any);
+        const denied = Object.values(res).some(v => v !== PermissionsAndroid.RESULTS.GRANTED);
+        if (denied) {
+          setScanning(false);
+          Alert.alert('Permission required', 'Bluetooth permission is required to scan for nearby devices. Please enable it in settings.');
+          return;
+        }
+      } catch (e) {
+        console.warn('Permission request failed', e);
+      }
+    }
+    try {
+      const BlePlx = require('react-native-ble-plx');
+      const BleManager = BlePlx?.BleManager || BlePlx?.default || BlePlx;
+      // @ts-ignore
+      const manager = new BleManager();
+      setBleAvailable(true);
+      const found = new Map<string, { id: string; name: string; type: string }>();
+      // @ts-ignore
+      manager.startDeviceScan(null, null, (error: any, device: any) => {
+        if (error) {
+          console.warn('BLE scan error', error);
+          return;
+        }
+        if (device && device.id) {
+          const name = device.name || device.localName || `Device ${device.id.slice(0, 6)}`;
+          if (!found.has(device.id)) {
+            found.set(device.id, { id: device.id, name, type: 'bluetooth' });
+            setDevices(Array.from(found.values()));
+          }
+        }
+      });
+      setTimeout(() => {
+        try {
+          // @ts-ignore
+          manager.stopDeviceScan();
+        } catch (e) {}
+        setScanning(false);
+      }, 4000);
+    } catch (e) {
+      // Avoid raising a yellow-box in dev when optional BLE library is missing.
+      console.info('BLE library not available');
+      setBleAvailable(false);
+      setScanning(false);
+    }
+  }, []);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -25,15 +94,15 @@ export default function OutputScreen() {
           <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.title}>Audio Output</Text>
-        <TouchableOpacity style={styles.scanBtn}>
-          <Ionicons name="refresh" size={18} color={colors.accentLight} />
+        <TouchableOpacity style={styles.scanBtn} onPress={() => scanForBluetooth()}>
+          <Ionicons name={scanning ? 'refresh' : 'refresh'} size={18} color={colors.accentLight} />
         </TouchableOpacity>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         {/* Phone speaker */}
         <Text style={styles.sectionLabel}>THIS DEVICE</Text>
-        <TouchableOpacity style={[styles.deviceCard, selected === 'phone' && styles.deviceCardActive]} onPress={() => setSelected('phone')}>
+        <TouchableOpacity style={[styles.deviceCard, selected === 'phone' && styles.deviceCardActive]} onPress={() => setOutputDevice('phone')}>
           <View style={[styles.deviceIcon, selected === 'phone' && styles.deviceIconActive]}>
             <Ionicons name="phone-portrait-outline" size={22} color={selected === 'phone' ? colors.white : colors.textSecondary} />
           </View>
@@ -51,41 +120,37 @@ export default function OutputScreen() {
 
         {/* Bluetooth */}
         <Text style={styles.sectionLabel}>BLUETOOTH</Text>
-        {DEVICES.filter((d) => d.type === 'bluetooth').map((d) => (
-          <TouchableOpacity key={d.id} style={[styles.deviceCard, selected === d.id && styles.deviceCardActive]} onPress={() => setSelected(d.id)}>
+        {bleAvailable === false && (
+          <View style={{ paddingVertical: 12 }}>
+            <Text style={{ color: colors.textMuted }}>Bluetooth integration not available. Install a BLE library or enable Bluetooth.</Text>
+            <TouchableOpacity style={{ marginTop: 8 }} onPress={openBluetoothSettings}>
+              <Text style={{ color: colors.accentLight }}>Open Bluetooth Settings</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {bleAvailable === null && (
+          <View style={{ paddingVertical: 8 }}>
+            <Text style={{ color: colors.textMuted }}>Press refresh to scan for nearby Bluetooth devices.</Text>
+          </View>
+        )}
+        {devices.map((d) => (
+          <TouchableOpacity key={d.id} style={[styles.deviceCard, selected === d.id && styles.deviceCardActive]} onPress={() => setOutputDevice(d.id)}>
             <View style={[styles.deviceIcon, selected === d.id && styles.deviceIconActive]}>
               <Ionicons name="bluetooth" size={22} color={selected === d.id ? colors.white : colors.textSecondary} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.deviceName}>{d.name}</Text>
-              <Text style={styles.deviceSub}>{d.connected ? 'Connected' : 'Available'}</Text>
+              <Text style={styles.deviceSub}>Available</Text>
             </View>
-            <View style={styles.deviceRight}>
-              {d.battery !== null && (
-                <View style={styles.batteryRow}>
-                  <Ionicons name="battery-half" size={14} color={d.battery > 50 ? colors.green : colors.yellow} />
-                  <Text style={styles.batteryTxt}>{d.battery}%</Text>
-                </View>
-              )}
-              {selected === d.id && <Ionicons name="checkmark-circle" size={20} color={colors.accentLight} />}
-            </View>
+            {selected === d.id && <Ionicons name="checkmark-circle" size={20} color={colors.accentLight} />}
           </TouchableOpacity>
         ))}
 
         {/* Cast */}
         <Text style={styles.sectionLabel}>CAST TO DEVICE</Text>
-        {DEVICES.filter((d) => d.type === 'cast').map((d) => (
-          <TouchableOpacity key={d.id} style={[styles.deviceCard, selected === d.id && styles.deviceCardActive]} onPress={() => setSelected(d.id)}>
-            <View style={[styles.deviceIcon, selected === d.id && styles.deviceIconActive]}>
-              <Ionicons name="tv-outline" size={22} color={selected === d.id ? colors.white : colors.textSecondary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.deviceName}>{d.name}</Text>
-              <Text style={styles.deviceSub}>Google Cast</Text>
-            </View>
-            {selected === d.id && <Ionicons name="checkmark-circle" size={20} color={colors.accentLight} />}
-          </TouchableOpacity>
-        ))}
+        <View style={{ paddingVertical: 8 }}>
+          <Text style={{ color: colors.textMuted }}>Casting support requires additional libraries (Google Cast/AirPlay). Install and integrate a cast SDK to list cast targets here.</Text>
+        </View>
 
         {/* Now casting info */}
         {selected !== 'phone' && (
@@ -93,9 +158,9 @@ export default function OutputScreen() {
             <Ionicons name="musical-notes" size={18} color={colors.accentLight} />
             <View style={{ flex: 1 }}>
               <Text style={styles.castingTxt}>Casting: Neon Drift</Text>
-              <Text style={styles.castingTo}>To {DEVICES.find((d) => d.id === selected)?.name ?? selected}</Text>
+              <Text style={styles.castingTo}>To {devices.find((d) => d.id === selected)?.name ?? selected}</Text>
             </View>
-            <TouchableOpacity onPress={() => setSelected('phone')}>
+            <TouchableOpacity onPress={() => setOutputDevice('phone')}>
               <Text style={styles.stopCast}>Stop</Text>
             </TouchableOpacity>
           </View>
