@@ -5,6 +5,10 @@ export type Track = {
   durationSec: number;
   uri: string;           // file:// or content:// URI
   isFavorite: boolean;
+  // Optional metadata used for notifications / UI
+  artist?: string;
+  artwork?: string;      // artwork URI or path
+  albumArt?: string;     // legacy alias
 };
 
 export type Playlist = {

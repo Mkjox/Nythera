@@ -2,6 +2,7 @@ import React, { createContext, useContext, useReducer, useEffect, useCallback, u
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Track, Playlist, HistoryEntry } from '../types/music';
 import * as audioService from '../services/audioService';
+import { NativeModules, Platform } from 'react-native';
 import { PlaybackState } from '../services/audioService';
 
 // ─── State Shape ────────────────────────────────────────────────
@@ -374,6 +375,37 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
+    // Listen for remote commands from native notification (Android)
+    if (Platform.OS === 'android') {
+      audioService.onRemoteCommand(async (payload: any) => {
+        try {
+          // payload can be a string or an object
+          const action = typeof payload === 'string' ? payload : payload?.action;
+          if (action === 'com.mkjox.Nythera.ACTION_PLAY' || action === 'com.mkjox.Nythera.ACTION_PAUSE') {
+            await audioService.toggle();
+          } else if (action === 'com.mkjox.Nythera.ACTION_NEXT') {
+            dispatch({ type: 'NEXT_TRACK' });
+          } else if (action === 'com.mkjox.Nythera.ACTION_PREV') {
+            const s = stateRef.current;
+            if (s.positionMs > 3000) {
+              await audioService.seekTo(0);
+              dispatch({ type: 'SET_POSITION', positionMs: 0, durationMs: s.durationMs });
+            } else {
+              dispatch({ type: 'PREV_TRACK' });
+            }
+          } else if (action === 'com.mkjox.Nythera.ACTION_SEEK') {
+            const pos = typeof payload === 'object' ? payload.position : undefined;
+            if (typeof pos === 'number') {
+              await audioService.seekTo(Math.round(pos));
+              dispatch({ type: 'SET_POSITION', positionMs: Math.round(pos), durationMs: stateRef.current.durationMs });
+            }
+          }
+        } catch (e) {
+          console.warn('Remote command handling failed', e);
+        }
+      });
+    }
+
     return () => {
       if (playStateTimerRef.current) {
         clearTimeout(playStateTimerRef.current);
@@ -471,6 +503,31 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
     getRecentTracks,
     getFavoriteTracks,
   };
+
+  // Sync metadata and playback state (including position) to native Android media notification
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !NativeModules.MediaNotificationModule) return;
+    const t = state.currentTrack;
+    const pos = state.positionMs || 0;
+    const dur = state.durationMs || 0;
+    if (t) {
+      const meta = { title: t.title || '', artist: t.artist || '', artwork: t.artwork || t.albumArt || '' };
+      try {
+        // Update metadata first
+        NativeModules.MediaNotificationModule.updateMetadata(meta);
+        // Ensure service is running with initial metadata and state
+        NativeModules.MediaNotificationModule.startService(meta, state.isPlaying, pos, dur);
+        // Update playback state (position + playing)
+        NativeModules.MediaNotificationModule.setPlaybackState(state.isPlaying, pos, dur);
+      } catch (e) {
+        // ignore native errors in non-native environments
+      }
+    } else {
+      try {
+        NativeModules.MediaNotificationModule.stopService();
+      } catch (e) {}
+    }
+  }, [state.currentTrack, state.isPlaying, state.positionMs, state.durationMs]);
 
   return (
     <MusicContext.Provider value={value}>

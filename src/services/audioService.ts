@@ -1,4 +1,5 @@
 import { AudioStatus, AudioPlayer, createAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 
 export type PlaybackState = {
   isPlaying: boolean;
@@ -8,6 +9,7 @@ export type PlaybackState = {
 };
 
 type StatusCallback = (state: PlaybackState) => void;
+type RemoteCommand = (command: any) => void;
 
 let player: AudioPlayer | null = null;
 let statusCallback: StatusCallback | null = null;
@@ -72,6 +74,20 @@ export async function loadAndPlay(uri: string): Promise<void> {
     player.replace(uri);
   }
   player.play();
+}
+
+// Remote command bridge from native notification actions -> JS
+let remoteCommandCallback: RemoteCommand | null = null;
+let nativeEvtSub: { remove: () => void } | null = null;
+
+export function onRemoteCommand(cb: RemoteCommand) {
+  remoteCommandCallback = cb;
+  if (Platform.OS === 'android' && NativeModules.MediaNotificationModule) {
+    const emitter = new NativeEventEmitter(NativeModules.MediaNotificationModule);
+    nativeEvtSub = emitter.addListener('mediaControl', (payload: any) => {
+      if (remoteCommandCallback) remoteCommandCallback(payload);
+    });
+  }
 }
 
 export async function pause(): Promise<void> {
