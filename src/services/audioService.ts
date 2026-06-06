@@ -15,6 +15,8 @@ let player: AudioPlayer | null = null;
 let statusCallback: StatusCallback | null = null;
 let statusSubscription: { remove: () => void } | null = null;
 let _lastStatus: any = null;
+let _currentUri: string | null = null;
+let _lastStatusUri: string | null = null;
 
 export async function configureAudioSession() {
   await setAudioModeAsync({
@@ -32,6 +34,7 @@ function handleStatus(status: AudioStatus) {
   // Keep last status to detect end-of-track when player unloads in background
   const last = _lastStatus;
   _lastStatus = status;
+  _lastStatusUri = _currentUri;
   if (!status.isLoaded) {
     // If the player just unloaded but the last known status indicated the track
     // reached its end, synthesize a final 'finished' status so consumers can
@@ -40,12 +43,15 @@ function handleStatus(status: AudioStatus) {
     if (
       last &&
       last.isLoaded &&
-      !last.playing &&
       typeof last.currentTime === 'number' &&
       typeof last.duration === 'number' &&
       last.duration > 0 &&
-      last.currentTime >= last.duration - 0.5
+      last.currentTime >= last.duration - 0.5 &&
+      _lastStatusUri && _currentUri && _lastStatusUri === _currentUri
     ) {
+      // Synthesize final finished status when the native player unloads
+      // (useful when the OS unloads the player in background).
+      console.log('[audioService] synthesize finished status', { currentTime: last.currentTime, duration: last.duration });
       if (statusCallback) {
         statusCallback({ isPlaying: false, positionMs: Math.round((last.duration || 0) * 1000), durationMs: Math.round((last.duration || 0) * 1000), isLoaded: true });
       }
@@ -67,6 +73,7 @@ function handleStatus(status: AudioStatus) {
 }
 
 export async function loadAndPlay(uri: string): Promise<void> {
+  _currentUri = uri;
   if (!player) {
     player = createAudioPlayer(uri);
     statusSubscription = player.addListener('playbackStatusUpdate', handleStatus);

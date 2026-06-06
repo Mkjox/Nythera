@@ -341,6 +341,8 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   // Listen for track completion
   const playStateTimerRef = useRef<number | null>(null);
   const lastPlayingRef = useRef<boolean>(false);
+  const finishedRef = useRef<{ id: string | null; ts: number }>({ id: null, ts: 0 });
+  const lastAdvanceRef = useRef<number>(0);
 
   useEffect(() => {
     audioService.onPlaybackStatus((ps: PlaybackState) => {
@@ -364,10 +366,60 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
 
         // Track finished detection
         if (!ps.isPlaying && ps.positionMs > 0 && ps.durationMs > 0 && ps.positionMs >= ps.durationMs - 500) {
+          const currId = s.currentTrack?.id ?? null;
+          const now = Date.now();
+          console.log('[MusicProvider] detected finished track', { trackId: currId, positionMs: ps.positionMs, durationMs: ps.durationMs });
+          // Prevent duplicate quick-fire finished events that can cause skipping
+          if (currId && finishedRef.current.id === currId && now - finishedRef.current.ts < 2000) {
+            console.log('[MusicProvider] ignoring duplicate finished event', { trackId: currId });
+            return;
+          }
+          if (now - lastAdvanceRef.current < 1500) {
+            console.log('[MusicProvider] ignoring finished event due to recent advance', { trackId: currId });
+            return;
+          }
+
+          finishedRef.current = { id: currId, ts: now };
           if (s.currentTrack) {
             dispatch({ type: 'ADD_HISTORY', entry: { trackId: s.currentTrack.id, playedAt: Date.now() } });
           }
-          setTimeout(() => dispatch({ type: 'NEXT_TRACK' }), 100);
+
+          // Compute next track according to current state (mirror reducer logic)
+          (async () => {
+            const st = stateRef.current;
+            if (!st.queue || st.queue.length === 0) return;
+            if (st.repeat === 'one') {
+              // restart current
+              try {
+                await audioService.seekTo(0);
+                dispatch({ type: 'SET_POSITION', positionMs: 0, durationMs: st.durationMs });
+              } catch (e) {
+                console.warn('Failed to seek to start on repeat one', e);
+              }
+              return;
+            }
+            let nextIdx = st.queueIndex + 1;
+            if (nextIdx >= st.queue.length) {
+              if (st.repeat === 'all') nextIdx = 0;
+              else {
+                dispatch({ type: 'SET_PLAYING', value: false });
+                return;
+              }
+            }
+            const nextTrack = st.queue[nextIdx];
+            if (!nextTrack) return;
+            try {
+              // Load the next track into the player immediately to avoid late
+              // synthesized statuses from the old player instance interfering.
+              console.log('[MusicProvider] loading next track before state update', { nextId: nextTrack.id });
+              await audioService.loadAndPlay(nextTrack.uri);
+            } catch (e) {
+              console.warn('Failed to load next track before dispatch', e);
+            }
+            console.log('[MusicProvider] dispatching NEXT_TRACK');
+            dispatch({ type: 'NEXT_TRACK' });
+            lastAdvanceRef.current = Date.now();
+          })();
         }
       } else {
         dispatch({ type: 'SET_PLAYING', value: false });
@@ -384,7 +436,36 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
           if (action === 'com.mkjox.Nythera.ACTION_PLAY' || action === 'com.mkjox.Nythera.ACTION_PAUSE') {
             await audioService.toggle();
           } else if (action === 'com.mkjox.Nythera.ACTION_NEXT') {
-            dispatch({ type: 'NEXT_TRACK' });
+            // Mirror the same advance logic used for finished detection: load next track before updating state
+            (async () => {
+              const st = stateRef.current;
+              if (!st.queue || st.queue.length === 0) return;
+              if (st.repeat === 'one') {
+                try {
+                  await audioService.seekTo(0);
+                  dispatch({ type: 'SET_POSITION', positionMs: 0, durationMs: st.durationMs });
+                } catch (e) {
+                  console.warn('Remote NEXT: failed to seek to start', e);
+                }
+                return;
+              }
+              let nextIdx = st.queueIndex + 1;
+              if (nextIdx >= st.queue.length) {
+                if (st.repeat === 'all') nextIdx = 0;
+                else {
+                  dispatch({ type: 'SET_PLAYING', value: false });
+                  return;
+                }
+              }
+              const nextTrack = st.queue[nextIdx];
+              if (!nextTrack) return;
+              try {
+                await audioService.loadAndPlay(nextTrack.uri);
+              } catch (e) {
+                console.warn('Remote NEXT: failed to load next track', e);
+              }
+              dispatch({ type: 'NEXT_TRACK' });
+            })();
           } else if (action === 'com.mkjox.Nythera.ACTION_PREV') {
             const s = stateRef.current;
             if (s.positionMs > 3000) {
