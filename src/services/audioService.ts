@@ -1,4 +1,5 @@
 import { AudioStatus, AudioPlayer, createAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 
 export type PlaybackState = {
@@ -12,8 +13,10 @@ type StatusCallback = (state: PlaybackState) => void;
 type RemoteCommand = (command: any) => void;
 
 let player: AudioPlayer | null = null;
+let nextPlayer: AudioPlayer | null = null;
 let statusCallback: StatusCallback | null = null;
 let statusSubscription: { remove: () => void } | null = null;
+let nextStatusSubscription: { remove: () => void } | null = null;
 let _lastStatus: any = null;
 let _currentUri: string | null = null;
 let _lastStatusUri: string | null = null;
@@ -74,13 +77,136 @@ function handleStatus(status: AudioStatus) {
 
 export async function loadAndPlay(uri: string): Promise<void> {
   _currentUri = uri;
-  if (!player) {
-    player = createAudioPlayer(uri);
-    statusSubscription = player.addListener('playbackStatusUpdate', handleStatus);
-  } else {
-    player.replace(uri);
+  // Check persisted crossfade / gapless / normalize preferences
+  let useCrossfade = false;
+  let useGapless = false;
+  let useNormalize = false;
+  try {
+    const [crossV, gapV, normV] = await Promise.all([
+      AsyncStorage.getItem('@nythera_crossfade'),
+      AsyncStorage.getItem('@nythera_gapless'),
+      AsyncStorage.getItem('@nythera_normalize'),
+    ]);
+    useCrossfade = crossV === '1';
+    useGapless = gapV === '1';
+    useNormalize = normV === '1';
+  } catch (e) {
+    // ignore
   }
-  player.play();
+
+  const normalizationTarget = useNormalize ? 0.9 : 1.0;
+
+  // If no existing player, behave as before
+  if (!player || (!useCrossfade && !useGapless)) {
+    if (!player) {
+      player = createAudioPlayer(uri);
+      statusSubscription = player.addListener('playbackStatusUpdate', handleStatus);
+    } else {
+      // try to replace if API available
+      try { player.replace(uri); } catch (e) { /* ignore */ }
+    }
+    try {
+      // Apply normalization target if supported
+      try {
+        const anyP: any = player as any;
+        if (typeof anyP.setVolumeAsync === 'function') await anyP.setVolumeAsync(normalizationTarget);
+        else if (typeof anyP.setVolume === 'function') anyP.setVolume(normalizationTarget);
+        else if ('volume' in anyP) anyP.volume = normalizationTarget;
+      } catch (e) { /* ignore */ }
+      player.play();
+    } catch (e) { /* ignore */ }
+    return;
+  }
+
+  // Crossfade/gapless: create next player and handle transition
+  try {
+    nextPlayer = createAudioPlayer(uri);
+    // subscribe status for next player so we continue receiving updates
+    nextStatusSubscription = nextPlayer.addListener('playbackStatusUpdate', handleStatus);
+
+    // helper to set volume with feature detection
+    const setVol = async (p: AudioPlayer | null, vol: number) => {
+      if (!p) return;
+      const anyP: any = p as any;
+      try {
+        if (typeof anyP.setVolumeAsync === 'function') await anyP.setVolumeAsync(vol);
+        else if (typeof anyP.setVolume === 'function') anyP.setVolume(vol);
+        else if ('volume' in anyP) anyP.volume = vol;
+      } catch (e) {
+        // ignore
+      }
+    };
+
+      if (useCrossfade) {
+      // start next player at volume 0
+      await setVol(nextPlayer, 0);
+      try { nextPlayer.play(); } catch (e) { /* ignore */ }
+
+      const durationMs = 3000;
+      const stepMs = 100;
+      const steps = Math.max(1, Math.floor(durationMs / stepMs));
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const volNext = t;
+        const volCurr = 1 - t;
+        await setVol(nextPlayer, volNext * normalizationTarget);
+        await setVol(player, volCurr * normalizationTarget);
+        // small delay
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, stepMs));
+      }
+
+      // finalize: stop and remove old player
+      try {
+        player.pause();
+        player.remove();
+      } catch (e) { /* ignore */ }
+      if (statusSubscription) {
+        try { statusSubscription.remove(); } catch (e) { }
+        statusSubscription = null;
+      }
+
+      // promote nextPlayer to player
+      player = nextPlayer;
+      statusSubscription = nextStatusSubscription;
+      nextPlayer = null;
+      nextStatusSubscription = null;
+    } else if (useGapless) {
+      // Gapless: attempt to start next player immediately and swap
+      try {
+        try {
+          // Apply normalization target to next player if supported
+          await setVol(nextPlayer, normalizationTarget);
+          nextPlayer.play();
+        } catch (e) { /* ignore */ }
+        // Give the next player a short moment to start
+        await new Promise((r) => setTimeout(r, 200));
+      } catch (e) {
+        // ignore
+      }
+
+      try {
+        player.pause();
+        player.remove();
+      } catch (e) { /* ignore */ }
+      if (statusSubscription) {
+        try { statusSubscription.remove(); } catch (e) { }
+        statusSubscription = null;
+      }
+
+      player = nextPlayer;
+      statusSubscription = nextStatusSubscription;
+      nextPlayer = null;
+      nextStatusSubscription = null;
+    } else {
+      // shouldn't reach here — fallback
+      try { player.replace(uri); player.play(); } catch (err) { /* ignore */ }
+    }
+  } catch (e) {
+    console.warn('Crossfade failed, falling back to normal play', e);
+    // fallback to simple replace
+    try { player.replace(uri); player.play(); } catch (err) { /* ignore */ }
+  }
 }
 
 // Remote command bridge from native notification actions -> JS

@@ -45,13 +45,36 @@ export default function SettingsScreen() {
   const [notifications, setNotifications] = useState(true);
   const [openPlayerOnPlay, setOpenPlayerOnPlay] = useState(true);
 
+  // Persistence keys
+  const KEYS = {
+    OPEN_PLAYER: '@nythera_open_player_on_play',
+    CROSSF: '@nythera_crossfade',
+    GAPLESS: '@nythera_gapless',
+    NORMALIZE: '@nythera_normalize',
+    AUTOPLAY: '@nythera_autoplay',
+    NOTIFS: '@nythera_media_notifications',
+  } as const;
+
   useEffect(() => {
     (async () => {
       try {
-        const val = await AsyncStorage.getItem('@nythera_open_player_on_play');
-        if (val !== null) setOpenPlayerOnPlay(val === '1');
+        const [openVal, crossVal, gapVal, normVal, autoVal, notifVal] = await Promise.all([
+          AsyncStorage.getItem(KEYS.OPEN_PLAYER),
+          AsyncStorage.getItem(KEYS.CROSSF),
+          AsyncStorage.getItem(KEYS.GAPLESS),
+          AsyncStorage.getItem(KEYS.NORMALIZE),
+          AsyncStorage.getItem(KEYS.AUTOPLAY),
+          AsyncStorage.getItem(KEYS.NOTIFS),
+        ]);
+
+        if (openVal !== null) setOpenPlayerOnPlay(openVal === '1');
+        if (crossVal !== null) setCrossfade(crossVal === '1');
+        if (gapVal !== null) setGapless(gapVal === '1');
+        if (normVal !== null) setNormalize(normVal === '1');
+        if (autoVal !== null) setAutoplay(autoVal === '1');
+        if (notifVal !== null) setNotifications(notifVal === '1');
       } catch (e) {
-        console.warn('Failed to load open-player setting', e);
+        console.warn('Failed to load settings', e);
       }
     })();
   }, []);
@@ -60,11 +83,51 @@ export default function SettingsScreen() {
     try {
       const next = !openPlayerOnPlay;
       setOpenPlayerOnPlay(next);
-      await AsyncStorage.setItem('@nythera_open_player_on_play', next ? '1' : '0');
+      await AsyncStorage.setItem(KEYS.OPEN_PLAYER, next ? '1' : '0');
     } catch (e) {
       console.warn('Failed to persist open-player setting', e);
     }
   }, [openPlayerOnPlay]);
+
+  const toggleCrossfade = useCallback(async () => {
+    try {
+      const next = !crossfade;
+      setCrossfade(next);
+      await AsyncStorage.setItem(KEYS.CROSSF, next ? '1' : '0');
+    } catch (e) { console.warn('Failed to persist crossfade', e); }
+  }, [crossfade]);
+
+  const toggleGapless = useCallback(async () => {
+    try {
+      const next = !gapless;
+      setGapless(next);
+      await AsyncStorage.setItem(KEYS.GAPLESS, next ? '1' : '0');
+    } catch (e) { console.warn('Failed to persist gapless', e); }
+  }, [gapless]);
+
+  const toggleNormalize = useCallback(async () => {
+    try {
+      const next = !normalize;
+      setNormalize(next);
+      await AsyncStorage.setItem(KEYS.NORMALIZE, next ? '1' : '0');
+    } catch (e) { console.warn('Failed to persist normalize', e); }
+  }, [normalize]);
+
+  const toggleAutoplay = useCallback(async () => {
+    try {
+      const next = !autoplay;
+      setAutoplay(next);
+      await AsyncStorage.setItem(KEYS.AUTOPLAY, next ? '1' : '0');
+    } catch (e) { console.warn('Failed to persist autoplay', e); }
+  }, [autoplay]);
+
+  const toggleNotifications = useCallback(async () => {
+    try {
+      const next = !notifications;
+      setNotifications(next);
+      await AsyncStorage.setItem(KEYS.NOTIFS, next ? '1' : '0');
+    } catch (e) { console.warn('Failed to persist notifications', e); }
+  }, [notifications]);
 
   const handleScanLibrary = useCallback(async () => {
     let perm = hasPermission;
@@ -92,13 +155,13 @@ export default function SettingsScreen() {
         {/* Playback */}
         <Text style={styles.section}>PLAYBACK</Text>
         <View style={styles.card}>
-          <ToggleRow label="Crossfade" sub="Smooth transition between tracks" value={crossfade} onToggle={() => setCrossfade(!crossfade)} />
+          <ToggleRow label="Crossfade" sub="Smooth transition between tracks" value={crossfade} onToggle={toggleCrossfade} />
           <View style={styles.divider} />
-          <ToggleRow label="Gapless Playback" sub="No silence between tracks" value={gapless} onToggle={() => setGapless(!gapless)} />
+          <ToggleRow label="Gapless Playback" sub="No silence between tracks" value={gapless} onToggle={toggleGapless} />
           <View style={styles.divider} />
-          <ToggleRow label="Volume Normalization" sub="Equalise loudness between tracks" value={normalize} onToggle={() => setNormalize(!normalize)} />
+          <ToggleRow label="Volume Normalization" sub="Equalise loudness between tracks" value={normalize} onToggle={toggleNormalize} />
           <View style={styles.divider} />
-          <ToggleRow label="Autoplay" sub="Continue playing similar music" value={autoplay} onToggle={() => setAutoplay(!autoplay)} />
+          <ToggleRow label="Autoplay" sub="Continue playing similar music" value={autoplay} onToggle={toggleAutoplay} />
           <View style={styles.divider} />
           <NavRow icon="speedometer-outline" label="Playback Speed" value="1×" onPress={() => {}} />
           <View style={styles.divider} />
@@ -122,7 +185,7 @@ export default function SettingsScreen() {
         {/* Notifications */}
         <Text style={styles.section}>NOTIFICATIONS</Text>
         <View style={styles.card}>
-          <ToggleRow label="Media Notification" sub="Show controls in notification bar" value={notifications} onToggle={() => setNotifications(!notifications)} />
+          <ToggleRow label="Media Notification" sub="Show controls in notification bar" value={notifications} onToggle={toggleNotifications} />
         </View>
 
         {/* About */}

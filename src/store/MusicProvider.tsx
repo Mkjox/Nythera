@@ -387,7 +387,42 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
           // Compute next track according to current state (mirror reducer logic)
           (async () => {
             const st = stateRef.current;
-            if (!st.queue || st.queue.length === 0) return;
+            if (!st.queue || st.queue.length === 0) {
+              // Autoplay fallback: if user enabled autoplay, build a recommended queue
+              try {
+                const autoVal = await AsyncStorage.getItem('@nythera_autoplay');
+                const autoplayEnabled = autoVal === '1';
+                if (autoplayEnabled && st.currentTrack) {
+                  const all = Object.values(st.tracks).filter(t => t.id !== st.currentTrack!.id);
+                  let recommended: Track[] = [];
+                  if (st.currentTrack?.artist) {
+                    recommended = all.filter(t => t.artist === st.currentTrack!.artist);
+                  }
+                  if (recommended.length < 10) {
+                    const needed = 20;
+                    const pool = all.filter(t => !recommended.find(r => r.id === t.id));
+                    // shuffle pool
+                    for (let i = pool.length - 1; i > 0; i--) {
+                      const j = Math.floor(Math.random() * (i + 1));
+                      [pool[i], pool[j]] = [pool[j], pool[i]];
+                    }
+                    recommended = [...recommended, ...pool.slice(0, needed)];
+                  }
+                  if (recommended.length > 0) {
+                    const first = recommended[0];
+                    try {
+                      await audioService.loadAndPlay(first.uri);
+                    } catch (e) { console.warn('Autoplay: failed to preload', e); }
+                    dispatch({ type: 'PLAY_TRACK', track: first, queue: recommended, index: 0 });
+                    lastAdvanceRef.current = Date.now();
+                    return;
+                  }
+                }
+              } catch (e) {
+                console.warn('Autoplay check failed', e);
+              }
+              return;
+            }
             if (st.repeat === 'one') {
               // restart current
               try {
