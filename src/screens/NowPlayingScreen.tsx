@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { Alert, Share } from 'react-native';
+import TrackPlayer, { useProgress } from 'react-native-track-player';
 import { colors, spacing, radius, typography } from '../theme';
 import { usePlayer, useMusicStore } from '../store/MusicProvider';
 
@@ -16,9 +17,18 @@ export default function NowPlayingScreen() {
   const { currentTrack, isPlaying, positionMs, durationMs, shuffle, repeat, togglePlayPause, nextTrack, prevTrack, seekTo } = usePlayer();
   const [speedIdx, setSpeedIdx] = React.useState(2);
 
-  const progress = durationMs > 0 ? positionMs / durationMs : 0;
-  const currentSec = Math.floor(positionMs / 1000);
-  const totalSec = Math.floor(durationMs / 1000);
+  // useProgress gives more frequent native updates for smooth UI
+  const prog = useProgress(250);
+  const progPosMs = Math.floor((prog.position || 0) * 1000);
+  // fall back to state.durationMs if native duration is temporarily unavailable
+  const nativeDurMs = Math.floor((prog.duration || 0) * 1000);
+  const progDurMs = nativeDurMs > 0 ? nativeDurMs : state.durationMs;
+  const progress = progDurMs > 0 ? progPosMs / progDurMs : 0;
+  const currentSec = Math.floor((prog.position || (state.positionMs / 1000)));
+  const totalSec = Math.floor(progDurMs / 1000);
+
+  const [barWidth, setBarWidth] = React.useState(1);
+  const [dragRatio, setDragRatio] = React.useState<number | null>(null);
 
   const formatTime = (sec: number) => {
     const m = Math.floor(sec / 60);
@@ -26,13 +36,15 @@ export default function NowPlayingScreen() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  const handleSeek = useCallback((event: any) => {
-    // Simple touch-based seek on the bar
+  const handleSeekMove = useCallback((event: any, commit: boolean) => {
     const { locationX } = event.nativeEvent;
-    const barWidth = event.nativeEvent.target ? 300 : 300; // approximate
-    const ratio = Math.max(0, Math.min(1, locationX / barWidth));
-    seekTo(ratio * durationMs);
-  }, [durationMs, seekTo]);
+    const ratio = barWidth > 0 ? Math.max(0, Math.min(1, locationX / barWidth)) : 0;
+    setDragRatio(ratio);
+    if (commit) {
+      seekTo(ratio * progDurMs);
+      setDragRatio(null);
+    }
+  }, [barWidth, progDurMs, seekTo]);
 
   const handleSpeedChange = useCallback(async () => {
     const newIdx = (speedIdx + 1) % SPEEDS.length;
@@ -120,10 +132,17 @@ export default function NowPlayingScreen() {
 
       {/* Seek bar */}
       <View style={styles.seekContainer}>
-        <TouchableOpacity style={styles.seekTrack} onPress={handleSeek} activeOpacity={1}>
-          <View style={[styles.seekFill, { width: `${progress * 100}%` }]} />
-          <View style={[styles.seekThumb, { left: `${progress * 100}%` }]} />
-        </TouchableOpacity>
+        <View
+          style={styles.seekTrack}
+          onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
+          onStartShouldSetResponder={() => true}
+          onResponderGrant={(e) => handleSeekMove(e, false)}
+          onResponderMove={(e) => handleSeekMove(e, false)}
+          onResponderRelease={(e) => handleSeekMove(e, true)}
+        >
+          <View style={[styles.seekFill, { width: `${(dragRatio ?? progress) * 100}%` }]} />
+          <View style={[styles.seekThumb, { left: `${(dragRatio ?? progress) * 100}%` }]} />
+        </View>
         <View style={styles.timeRow}>
           <Text style={styles.timeTxt}>{formatTime(currentSec)}</Text>
           <Text style={styles.timeTxt}>-{formatTime(Math.max(0, totalSec - currentSec))}</Text>

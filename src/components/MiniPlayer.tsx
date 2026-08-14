@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { colors, spacing, radius, typography } from '../theme';
 import { usePlayer } from '../store/MusicProvider';
+import { useProgress } from 'react-native-track-player';
 
 type Props = {
   onPress?: () => void;
@@ -18,11 +19,14 @@ type Props = {
 export default function MiniPlayer({ onPress }: Props) {
   const navigation = useNavigation<any>();
   const { currentTrack, isPlaying, positionMs, durationMs, togglePlayPause, nextTrack, prevTrack } = usePlayer();
+  const prog = useProgress(500);
 
   // Hide when no track is loaded
   if (!currentTrack) return null;
 
-  const progress = durationMs > 0 ? positionMs / durationMs : 0;
+  const progPos = prog.position || (positionMs / 1000);
+  const progDur = prog.duration || (durationMs / 1000);
+  const progress = progDur > 0 ? progPos / progDur : 0;
 
   const handlePress = () => {
     if (onPress) onPress();

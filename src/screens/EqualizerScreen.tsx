@@ -4,10 +4,23 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { colors, spacing, radius, typography } from '../theme';
+import * as audioService from '../services/audioService';
 
 const PRESETS = ['Flat', 'Bass Boost', 'Treble', 'Vocal', 'Rock', 'Pop', 'Jazz', 'Classical', 'Custom'];
 const BANDS = ['60Hz', '150Hz', '400Hz', '1kHz', '2.5k', '6kHz', '16k'];
 const DEFAULT_GAINS = [0, 3, -2, 0, 2, 4, 1];
+
+const PRESET_GAINS: Record<string, number[]> = {
+  'Flat': [0, 0, 0, 0, 0, 0, 0],
+  'Bass Boost': [6, 4, 1, 0, 0, 0, 0],
+  'Treble': [0, 0, 0, 0, 2, 4, 6],
+  'Vocal': [-2, -1, 0, 4, 3, 1, -1],
+  'Rock': [5, 3, -1, 1, 3, 4, 5],
+  'Pop': [-1, 2, 4, 4, 2, -1, -2],
+  'Jazz': [3, 2, -2, 2, -1, 2, 3],
+  'Classical': [4, 3, -3, 2, 1, 3, 4],
+  'Custom': DEFAULT_GAINS,
+};
 
 export default function EqualizerScreen() {
   const navigation = useNavigation<any>();
@@ -20,6 +33,36 @@ export default function EqualizerScreen() {
     setGains((g) => g.map((v, idx) => idx === i ? Math.max(-12, Math.min(12, v + delta)) : v));
     setPreset('Custom');
   };
+
+  const handlePresetSelect = (p: string) => {
+    setPreset(p);
+    if (PRESET_GAINS[p]) {
+      setGains(PRESET_GAINS[p]);
+    }
+  };
+
+  // Apply changes to native audio service
+  React.useEffect(() => {
+    audioService.setEqualizerEnabled(enabled);
+  }, [enabled]);
+
+  React.useEffect(() => {
+    // apply each band
+    gains.forEach((g, i) => {
+      audioService.setEqualizerBand(i, g).catch(() => {});
+    });
+  }, [gains]);
+
+  React.useEffect(() => {
+    audioService.setBassBoost(bassBoost).catch(() => {});
+  }, [bassBoost]);
+
+  React.useEffect(() => {
+    if (preset !== 'Custom') {
+      const p = PRESET_GAINS[preset] ?? DEFAULT_GAINS;
+      audioService.setEqualizerPreset(p).catch(() => {});
+    }
+  }, [preset]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -37,7 +80,7 @@ export default function EqualizerScreen() {
         <Text style={styles.label}>PRESETS</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetRow}>
           {PRESETS.map((p) => (
-            <TouchableOpacity key={p} style={[styles.presetBtn, preset === p && styles.presetActive]} onPress={() => setPreset(p)}>
+            <TouchableOpacity key={p} style={[styles.presetBtn, preset === p && styles.presetActive]} onPress={() => handlePresetSelect(p)}>
               <Text style={[styles.presetTxt, preset === p && styles.presetTxtActive]}>{p}</Text>
             </TouchableOpacity>
           ))}
@@ -86,7 +129,7 @@ export default function EqualizerScreen() {
         </View>
 
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.resetBtn} onPress={() => { setGains(DEFAULT_GAINS); setPreset('Flat'); }}>
+          <TouchableOpacity style={styles.resetBtn} onPress={() => handlePresetSelect('Flat')}>
             <Ionicons name="refresh" size={16} color={colors.textSecondary} />
             <Text style={styles.resetTxt}>Reset</Text>
           </TouchableOpacity>

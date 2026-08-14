@@ -2,7 +2,8 @@ import React, { createContext, useContext, useReducer, useEffect, useCallback, u
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Track, Playlist, HistoryEntry } from '../types/music';
 import * as audioService from '../services/audioService';
-import { NativeModules, Platform } from 'react-native';
+import { Platform } from 'react-native';
+import TrackPlayer, { Event, State as TrackPlayerState, useTrackPlayerEvents } from 'react-native-track-player';
 import { PlaybackState } from '../services/audioService';
 
 // ─── State Shape ────────────────────────────────────────────────
@@ -339,196 +340,39 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Listen for track completion
-  const playStateTimerRef = useRef<number | null>(null);
-  const lastPlayingRef = useRef<boolean>(false);
-  const finishedRef = useRef<{ id: string | null; ts: number }>({ id: null, ts: 0 });
-  const lastAdvanceRef = useRef<number>(0);
-
-  useEffect(() => {
-    audioService.onPlaybackStatus((ps: PlaybackState) => {
-      const s = stateRef.current;
-      if (ps.isLoaded) {
-        // Update position immediately
-        dispatch({ type: 'SET_POSITION', positionMs: ps.positionMs, durationMs: ps.durationMs });
-
-        // Debounce transient isPlaying toggles (buffering spikes can flip this briefly)
-        if (ps.isPlaying !== lastPlayingRef.current) {
-          if (playStateTimerRef.current) {
-            clearTimeout(playStateTimerRef.current);
-            playStateTimerRef.current = null;
-          }
-          playStateTimerRef.current = (setTimeout(() => {
-            dispatch({ type: 'SET_PLAYING', value: ps.isPlaying });
-            lastPlayingRef.current = ps.isPlaying;
-            playStateTimerRef.current = null;
-          }, 250) as unknown) as number;
-        }
-
-        // Track finished detection
-        if (!ps.isPlaying && ps.positionMs > 0 && ps.durationMs > 0 && ps.positionMs >= ps.durationMs - 500) {
-          const currId = s.currentTrack?.id ?? null;
-          const now = Date.now();
-          console.log('[MusicProvider] detected finished track', { trackId: currId, positionMs: ps.positionMs, durationMs: ps.durationMs });
-          // Prevent duplicate quick-fire finished events that can cause skipping
-          if (currId && finishedRef.current.id === currId && now - finishedRef.current.ts < 2000) {
-            console.log('[MusicProvider] ignoring duplicate finished event', { trackId: currId });
-            return;
-          }
-          if (now - lastAdvanceRef.current < 1500) {
-            console.log('[MusicProvider] ignoring finished event due to recent advance', { trackId: currId });
-            return;
-          }
-
-          finishedRef.current = { id: currId, ts: now };
-          if (s.currentTrack) {
-            dispatch({ type: 'ADD_HISTORY', entry: { trackId: s.currentTrack.id, playedAt: Date.now() } });
-          }
-
-          // Compute next track according to current state (mirror reducer logic)
-          (async () => {
-            const st = stateRef.current;
-            if (!st.queue || st.queue.length === 0) {
-              // Autoplay fallback: if user enabled autoplay, build a recommended queue
-              try {
-                const autoVal = await AsyncStorage.getItem('@nythera_autoplay');
-                const autoplayEnabled = autoVal === '1';
-                if (autoplayEnabled && st.currentTrack) {
-                  const all = Object.values(st.tracks).filter(t => t.id !== st.currentTrack!.id);
-                  let recommended: Track[] = [];
-                  if (st.currentTrack?.artist) {
-                    recommended = all.filter(t => t.artist === st.currentTrack!.artist);
-                  }
-                  if (recommended.length < 10) {
-                    const needed = 20;
-                    const pool = all.filter(t => !recommended.find(r => r.id === t.id));
-                    // shuffle pool
-                    for (let i = pool.length - 1; i > 0; i--) {
-                      const j = Math.floor(Math.random() * (i + 1));
-                      [pool[i], pool[j]] = [pool[j], pool[i]];
-                    }
-                    recommended = [...recommended, ...pool.slice(0, needed)];
-                  }
-                  if (recommended.length > 0) {
-                    const first = recommended[0];
-                    try {
-                      await audioService.loadAndPlay(first.uri);
-                    } catch (e) { console.warn('Autoplay: failed to preload', e); }
-                    dispatch({ type: 'PLAY_TRACK', track: first, queue: recommended, index: 0 });
-                    lastAdvanceRef.current = Date.now();
-                    return;
-                  }
-                }
-              } catch (e) {
-                console.warn('Autoplay check failed', e);
-              }
-              return;
-            }
-            if (st.repeat === 'one') {
-              // restart current
-              try {
-                await audioService.seekTo(0);
-                dispatch({ type: 'SET_POSITION', positionMs: 0, durationMs: st.durationMs });
-              } catch (e) {
-                console.warn('Failed to seek to start on repeat one', e);
-              }
-              return;
-            }
-            let nextIdx = st.queueIndex + 1;
-            if (nextIdx >= st.queue.length) {
-              if (st.repeat === 'all') nextIdx = 0;
-              else {
-                dispatch({ type: 'SET_PLAYING', value: false });
-                return;
-              }
-            }
-            const nextTrack = st.queue[nextIdx];
-            if (!nextTrack) return;
-            try {
-              // Load the next track into the player immediately to avoid late
-              // synthesized statuses from the old player instance interfering.
-              console.log('[MusicProvider] loading next track before state update', { nextId: nextTrack.id });
-              await audioService.loadAndPlay(nextTrack.uri);
-            } catch (e) {
-              console.warn('Failed to load next track before dispatch', e);
-            }
-            console.log('[MusicProvider] dispatching NEXT_TRACK');
-            dispatch({ type: 'NEXT_TRACK' });
-            lastAdvanceRef.current = Date.now();
-          })();
-        }
-      } else {
-        dispatch({ type: 'SET_PLAYING', value: false });
-        dispatch({ type: 'SET_POSITION', positionMs: 0, durationMs: 0 });
+  // TrackPlayer event listener
+  useTrackPlayerEvents([
+    Event.PlaybackState,
+    Event.PlaybackActiveTrackChanged,
+    Event.PlaybackQueueEnded,
+  ], async (event) => {
+    if (event.type === Event.PlaybackState) {
+      // event.state
+      const isPlaying = event.state === TrackPlayerState.Playing;
+      dispatch({ type: 'SET_PLAYING', value: isPlaying });
+      
+      if (isPlaying && stateRef.current.positionMs === 0) {
+        // Track might have just started
       }
-    });
-
-    // Listen for remote commands from native notification (Android)
-    if (Platform.OS === 'android') {
-      audioService.onRemoteCommand(async (payload: any) => {
-        try {
-          // payload can be a string or an object
-          const action = typeof payload === 'string' ? payload : payload?.action;
-          if (action === 'com.mkjox.Nythera.ACTION_PLAY' || action === 'com.mkjox.Nythera.ACTION_PAUSE') {
-            await audioService.toggle();
-          } else if (action === 'com.mkjox.Nythera.ACTION_NEXT') {
-            // Mirror the same advance logic used for finished detection: load next track before updating state
-            (async () => {
-              const st = stateRef.current;
-              if (!st.queue || st.queue.length === 0) return;
-              if (st.repeat === 'one') {
-                try {
-                  await audioService.seekTo(0);
-                  dispatch({ type: 'SET_POSITION', positionMs: 0, durationMs: st.durationMs });
-                } catch (e) {
-                  console.warn('Remote NEXT: failed to seek to start', e);
-                }
-                return;
-              }
-              let nextIdx = st.queueIndex + 1;
-              if (nextIdx >= st.queue.length) {
-                if (st.repeat === 'all') nextIdx = 0;
-                else {
-                  dispatch({ type: 'SET_PLAYING', value: false });
-                  return;
-                }
-              }
-              const nextTrack = st.queue[nextIdx];
-              if (!nextTrack) return;
-              try {
-                await audioService.loadAndPlay(nextTrack.uri);
-              } catch (e) {
-                console.warn('Remote NEXT: failed to load next track', e);
-              }
-              dispatch({ type: 'NEXT_TRACK' });
-            })();
-          } else if (action === 'com.mkjox.Nythera.ACTION_PREV') {
-            const s = stateRef.current;
-            if (s.positionMs > 3000) {
-              await audioService.seekTo(0);
-              dispatch({ type: 'SET_POSITION', positionMs: 0, durationMs: s.durationMs });
-            } else {
-              dispatch({ type: 'PREV_TRACK' });
-            }
-          } else if (action === 'com.mkjox.Nythera.ACTION_SEEK') {
-            const pos = typeof payload === 'object' ? payload.position : undefined;
-            if (typeof pos === 'number') {
-              await audioService.seekTo(Math.round(pos));
-              dispatch({ type: 'SET_POSITION', positionMs: Math.round(pos), durationMs: stateRef.current.durationMs });
-            }
-          }
-        } catch (e) {
-          console.warn('Remote command handling failed', e);
-        }
-      });
+    } else if (event.type === Event.PlaybackActiveTrackChanged) {
+      if (!event.track) {
+         dispatch({ type: 'SET_PLAYING', value: false });
+         return;
+      }
+      
+      const currId = stateRef.current.currentTrack?.id;
+      // If the track changed natively (e.g. queue advanced) we should sync our state
+      // For now we just rely on our NEXT_TRACK logic
+    } else if (event.type === Event.PlaybackQueueEnded) {
+      // Native player finished playback. Advance our queue state so the next
+      // queued track will be loaded by the `useEffect` watching `currentTrack`.
+      dispatch({ type: 'NEXT_TRACK' });
     }
+  });
 
-    return () => {
-      if (playStateTimerRef.current) {
-        clearTimeout(playStateTimerRef.current);
-        playStateTimerRef.current = null;
-      }
-    };
-  }, []);
+  // Progress polling is typically handled by useProgress hook in components,
+  // but if we need it in state we'd poll it. Let's rely on components using useProgress directly if needed.
+
 
   // When currentTrack changes via NEXT/PREV, load it
   const prevTrackIdRef = useRef<string | null>(null);
@@ -537,6 +381,34 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
       prevTrackIdRef.current = state.currentTrack.id;
       audioService.loadAndPlay(state.currentTrack.uri).catch(console.warn);
     }
+  }, [state.currentTrack]);
+
+  // Poll TrackPlayer for position/duration so UI can show progress and allow seeking
+  useEffect(() => {
+    let mounted = true;
+    let t: number | null = null;
+    const startPolling = () => {
+      if (t) return;
+      t = setInterval(async () => {
+        try {
+          const pos = await TrackPlayer.getPosition();
+          const dur = await TrackPlayer.getDuration();
+          if (!mounted) return;
+          dispatch({ type: 'SET_POSITION', positionMs: Math.floor(pos * 1000), durationMs: Math.floor((dur || 0) * 1000) });
+        } catch (e) {
+          // ignore
+        }
+      }, 500);
+    };
+
+    const stopPolling = () => {
+      if (t !== null) { clearInterval(t); t = null; }
+    };
+
+    if (state.currentTrack) startPolling();
+    else stopPolling();
+
+    return () => { mounted = false; stopPolling(); };
   }, [state.currentTrack]);
 
   // ─── Actions ────────────────────────────────────────────────
@@ -620,30 +492,8 @@ export function MusicProvider({ children }: { children: React.ReactNode }) {
     getFavoriteTracks,
   };
 
-  // Sync metadata and playback state (including position) to native Android media notification
-  useEffect(() => {
-    if (Platform.OS !== 'android' || !NativeModules.MediaNotificationModule) return;
-    const t = state.currentTrack;
-    const pos = state.positionMs || 0;
-    const dur = state.durationMs || 0;
-    if (t) {
-      const meta = { title: t.title || '', artist: t.artist || '', artwork: t.artwork || t.albumArt || '' };
-      try {
-        // Update metadata first
-        NativeModules.MediaNotificationModule.updateMetadata(meta);
-        // Ensure service is running with initial metadata and state
-        NativeModules.MediaNotificationModule.startService(meta, state.isPlaying, pos, dur);
-        // Update playback state (position + playing)
-        NativeModules.MediaNotificationModule.setPlaybackState(state.isPlaying, pos, dur);
-      } catch (e) {
-        // ignore native errors in non-native environments
-      }
-    } else {
-      try {
-        NativeModules.MediaNotificationModule.stopService();
-      } catch (e) {}
-    }
-  }, [state.currentTrack, state.isPlaying, state.positionMs, state.durationMs]);
+  // Native media notification module is no longer needed
+  // TrackPlayer handles it natively!
 
   return (
     <MusicContext.Provider value={value}>
